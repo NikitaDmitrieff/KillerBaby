@@ -1,4 +1,4 @@
-import { Link, Tabs, router } from 'expo-router';
+import { Tabs, router } from 'expo-router';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../theme/colors';
@@ -11,6 +11,8 @@ function iconForRoute(routeName: string): keyof typeof Ionicons.glyphMap {
       return 'locate-outline';
     case 'feed':
       return 'newspaper-outline';
+    case 'conversation':
+      return 'chatbubbles-outline';
     case 'settings':
       return 'settings-outline';
     case 'assignments':
@@ -23,19 +25,33 @@ function iconForRoute(routeName: string): keyof typeof Ionicons.glyphMap {
 }
 
 export function FloatingTabBar({ state, descriptors, navigation }: Parameters<NonNullable<Props>>[0]) {
+  const currentRouteName = state.routes[state.index]?.name ?? '';
+
+  const labelMap: Record<string, string> = {
+    assignment: 'Assignment',
+    feed: 'Group',
+    conversation: 'Messages',
+    assignments: 'Assignments',
+    players: 'Players',
+  };
+
+  const visibleRoutes = state.routes.filter((r) => r.name !== 'settings');
+
   return (
     <>
       <View style={styles.wrapper}>
         <View style={styles.bar}>
-          {state.routes.map((route, index) => {
-            const isFocused = state.index === index;
+          {visibleRoutes.map((route) => {
+            if (route.name === 'settings') return null;
+            const label = labelMap[route.name] ?? descriptors[route.key]?.options.title ?? route.name;
+            const iconName = iconForRoute(route.name);
+            const isConversation = route.name === 'conversation';
+            const isFocused = isConversation ? currentRouteName === 'conversation' : currentRouteName === route.name;
+
             const onPress = () => {
               const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
               if (!isFocused && !event.defaultPrevented) navigation.navigate(route.name as never);
             };
-
-            const label = descriptors[route.key]?.options.title ?? route.name;
-            const iconName = iconForRoute(route.name);
 
             return (
               <TouchableOpacity key={route.key} accessibilityRole="button" onPress={onPress} style={styles.item} activeOpacity={0.85}>
@@ -53,6 +69,17 @@ export function FloatingTabBar({ state, descriptors, navigation }: Parameters<No
         accessibilityLabel="Back to groups"
         onPress={() => {
           try {
+            // Prefer navigating back if there is history
+            if ((navigation as any)?.canGoBack?.()) {
+              (navigation as any).goBack();
+              return;
+            }
+          } catch {}
+          try {
+            router.back();
+            return;
+          } catch {}
+          try {
             router.replace('/');
             return;
           } catch {}
@@ -64,15 +91,18 @@ export function FloatingTabBar({ state, descriptors, navigation }: Parameters<No
         <Ionicons name="chevron-back" size={28} color="#fff" />
       </TouchableOpacity>
 
-      <Link href="/create" asChild>
-        <TouchableOpacity
-          style={styles.fab}
-          accessibilityRole="button"
-          accessibilityLabel="Create new"
-        >
-          <Ionicons name="add" size={28} color="#fff" />
-        </TouchableOpacity>
-      </Link>
+      <TouchableOpacity
+        style={styles.fab}
+        accessibilityRole="button"
+        accessibilityLabel="Open settings"
+        onPress={() => {
+          try {
+            (navigation as any).navigate('settings');
+          } catch {}
+        }}
+      >
+        <Ionicons name="settings-outline" size={28} color="#fff" />
+      </TouchableOpacity>
     </>
   );
 }

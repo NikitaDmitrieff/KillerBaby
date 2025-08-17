@@ -234,12 +234,6 @@ export default function AdminPlayersScreen() {
                     >
                       {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Add</Text>}
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={loadPlayers}
-                      style={{ backgroundColor: '#e5e7eb', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
-                    >
-                      <Text style={{ color: '#111827', fontWeight: '700' }}>Refresh</Text>
-                    </TouchableOpacity>
                   </View>
                 </View>
               )}

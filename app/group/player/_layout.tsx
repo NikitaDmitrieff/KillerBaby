@@ -6,9 +6,9 @@ export default function PlayerGroupLayout() {
     <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <FloatingTabBar {...props} />}> 
       <Tabs.Screen name="assignment" options={{ title: 'Assignment' }} />
       <Tabs.Screen name="feed" options={{ title: 'Group' }} />
+      <Tabs.Screen name="conversation" options={{ title: 'Messages' }} />
+      {/* Hidden from tab bar but reachable via FAB */}
       <Tabs.Screen name="settings" options={{ title: 'Settings' }} />
     </Tabs>
   );
 }
-
-

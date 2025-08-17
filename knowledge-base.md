@@ -56,3 +56,21 @@
 
 ## Change log
 - 2025-08-17: Added `messages` table, enums `message_kind`, `message_tag`, indexes, and trigger for admin routing.
+- 2025-08-17: Seeded default `dare_templates` for all existing groups and added an insert trigger so new groups auto-populate ~44 default dares. Idempotent seeding avoids duplicates by matching on lowercase `text` per `group_id`.
+
+## Dare templates – defaults
+
+- Purpose: give admins a starting set to pick/propose as seed dares when starting a game.
+- Population:
+  - One-time backfill: inserted 44 defaults for every existing `groups.id`, authored by `groups.created_by`.
+  - Ongoing: a trigger `trg_seed_dare_templates_after_group_insert` calls `seed_default_dare_templates(new.id, new.created_by)` to auto-insert the same set for each new group.
+- Idempotency: insertion skips any `dare_templates` row where `lower(text)` already exists for the `group_id`.
+- Sample items (subset):
+  - "Casually say \"That reminds me of a movie\" during a chat."
+  - "Ask them what their go-to karaoke song is."
+  - "Work the word \"spreadsheets\" into a sentence."
+  - "Give a sincere compliment about their shoes."
+  - "Use the word \"pineapple\" in a sentence."
+  - "Hold the door and say \"After you, agent.\""
+  - "Say \"Enhance!\" while looking at your screen."
+

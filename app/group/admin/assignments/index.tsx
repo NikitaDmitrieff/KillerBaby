@@ -1,93 +1,102 @@
-import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../components/CollapsibleHeader';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Alert, TextInput, RefreshControl, Modal, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import RoleToggle from '../role-toggle';
+import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../../components/CollapsibleHeader';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import RoleToggle from '../../role-toggle';
 import { useEffect, useMemo, useState } from 'react';
-import { useGroupsStore } from '../../../state/groups';
-import { supabase } from '../../../lib/supabase';
+import { useGroupsStore } from '../../../../state/groups';
+import { supabase } from '../../../../lib/supabase';
+import { useRouter } from 'expo-router';
 
 type EdgeRow = { assassin_player_id: string; assassin_name: string; target_player_id: string; target_name: string; dare_text: string };
 type PlayerRow = { player_id: string; display_name: string };
 
-type DareCardProps = { text: string; onEdit: () => void };
+function getInitials(name: string | undefined | null) {
+  const safe = (name ?? '').trim();
+  if (!safe) return '?';
+  const parts = safe.split(/\s+/).filter(Boolean);
+  const initials = parts.map((p) => p[0] || '').join('').slice(0, 2).toUpperCase();
+  return initials || '?';
+}
 
-function DareCard({ text, onEdit }: DareCardProps) {
+function Avatar({ name, size = 28 }: { name: string; size?: number }) {
+  const initials = useMemo(() => getInitials(name), [name]);
   return (
-    <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, marginTop: 8 }}>
-      <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Dare</Text>
-      <Text style={{ marginTop: 6, color: '#111827' }}>{text?.trim() ? text : '—'}</Text>
-      <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-        <TouchableOpacity onPress={onEdit} style={{ backgroundColor: '#e5e7eb', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}>
-          <Text style={{ color: '#111827', fontWeight: '700' }}>Edit</Text>
-        </TouchableOpacity>
-      </View>
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 999,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#f3f4f6',
+        borderWidth: 2,
+        borderColor: '#ffffff',
+      }}
+    >
+      <Text style={{ fontSize: Math.max(10, Math.floor(size * 0.42)), fontWeight: '800', color: '#111827' }}>{initials}</Text>
     </View>
   );
 }
 
-type DareEditorModalProps = {
-  visible: boolean;
-  assassinName: string;
-  value: string;
-  onChangeValue: (t: string) => void;
-  onClose: () => void;
-  onSave: () => void;
-  saving: boolean;
-};
-
-function DareEditorModal({ visible, assassinName, value, onChangeValue, onClose, onSave, saving }: DareEditorModalProps) {
+function AvatarStack({ names, size = 28, max = 5 }: { names: string[]; size?: number; max?: number }) {
+  const shown = names.slice(0, max);
+  const overflow = Math.max(0, names.length - shown.length);
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' }}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={{ backgroundColor: '#ffffff', borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24, maxHeight: '85%' }}>
-            <View style={{ height: 4, width: 40, alignSelf: 'center', backgroundColor: '#e5e7eb', borderRadius: 9999, marginBottom: 12 }} />
-            <Text style={{ fontSize: 18, fontWeight: '800' }}>Edit dare for {assassinName}</Text>
-            <Text style={{ color: '#6b7280', marginTop: 4 }}>Set the challenge they must complete to eliminate their target.</Text>
-            <ScrollView style={{ marginTop: 12 }} keyboardShouldPersistTaps="handled">
-              <TextInput
-                value={value}
-                onChangeText={onChangeValue}
-                placeholder="Enter dare"
-                multiline
-                textAlignVertical="top"
-                style={{ backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12, minHeight: 120 }}
-              />
-            </ScrollView>
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
-              <TouchableOpacity onPress={onClose} style={{ backgroundColor: '#e5e7eb', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10 }}>
-                <Text style={{ color: '#111827', fontWeight: '700' }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={onSave} disabled={saving} style={{ backgroundColor: '#059669', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10, opacity: saving ? 0.8 : 1 }}>
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#ffffff', fontWeight: '800' }}>Save</Text>}
-              </TouchableOpacity>
-            </View>
+    <View style={{ flexDirection: 'row-reverse' }}>
+      {overflow > 0 ? (
+        <View style={{ marginLeft: -8 }}>
+          <View
+            style={{
+              width: size,
+              height: size,
+              borderRadius: 999,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#e5e7eb',
+              borderWidth: 2,
+              borderColor: '#ffffff',
+            }}
+          >
+            <Text style={{ fontSize: Math.max(10, Math.floor(size * 0.38)), fontWeight: '800', color: '#374151' }}>+{overflow}</Text>
           </View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
+        </View>
+      ) : null}
+      {shown.map((n, idx) => (
+        <View key={`${n}-${idx}`} style={{ marginLeft: -8 }}>
+          <Avatar name={n} size={size} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+type DareCardProps = { text: string };
+
+function DareCard({ text }: DareCardProps) {
+  return (
+    <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, marginTop: 8 }}>
+      <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Dare</Text>
+      <Text numberOfLines={3} style={{ marginTop: 6, color: '#111827' }}>{text?.trim() ? text : '—'}</Text>
+    </View>
   );
 }
 
 export default function AdminAssignmentsScreen() {
+  const router = useRouter();
   const { id: groupId } = useGroupsStore();
   const [loading, setLoading] = useState(true);
   const [edges, setEdges] = useState<EdgeRow[]>([]);
   const [seeding, setSeeding] = useState(false);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
-  const [editingDareFor, setEditingDareFor] = useState<string | null>(null);
-  const [dareDraftByAssassin, setDareDraftByAssassin] = useState<Record<string, string>>({});
-  const [savingDareFor, setSavingDareFor] = useState<string | null>(null);
   const [ringEditMode, setRingEditMode] = useState(false);
   const [mappingByAssassin, setMappingByAssassin] = useState<Record<string, string>>({});
+  const [dareDraftByAssassin, setDareDraftByAssassin] = useState<Record<string, string>>({});
   const [savingRing, setSavingRing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [dareModalFor, setDareModalFor] = useState<{ assassinId: string; assassinName: string } | null>(null);
 
   async function loadRing() {
     if (!groupId) return;
     try {
       setLoading(true);
-      // Fetch active assignments directly
       const [{ data: assigns, error: assignsErr }, { data: playersData, error: playersErr }] = await Promise.all([
         supabase
           .from('assignments')
@@ -112,7 +121,6 @@ export default function AdminAssignmentsScreen() {
         dare_text: r.dare_text as string,
       }));
       setEdges(rows);
-      // Initialize drafts/mapping from current state
       const nextDrafts: Record<string, string> = {};
       const nextMap: Record<string, string> = {};
       rows.forEach((e) => {
@@ -142,7 +150,6 @@ export default function AdminAssignmentsScreen() {
         Alert.alert('Need at least 2 players', 'Add more players to seed a ring.');
         return;
       }
-      // Simple order and wrap
       const assassins = ids;
       const targets = ids.slice(1).concat(ids.slice(0, 1));
       const dares = ids.map(() => 'Be creative!');
@@ -179,18 +186,15 @@ export default function AdminAssignmentsScreen() {
     const assassinIds = edges.map((e) => e.assassin_player_id);
     const selectedTargets = assassinIds.map((id) => mappingByAssassin[id]);
     if (selectedTargets.some((t) => !t)) return 'Each assassin must have a target.';
-    // No self targets
     for (const id of assassinIds) {
       if (mappingByAssassin[id] === id) return 'No one can target themselves.';
     }
-    // All targets unique and a permutation of the participants
     const setTargets = new Set(selectedTargets);
     if (setTargets.size !== assassinIds.length) return 'Targets must be unique.';
     const participantSet = new Set(assassinIds);
     for (const t of setTargets) {
       if (!participantSet.has(t as string)) return 'Targets must be chosen among active players only.';
     }
-    // Single cycle validation: ensure mapping forms one cycle over all participants
     const visited = new Set<string>();
     let current = assassinIds[0];
     for (let i = 0; i < assassinIds.length; i++) {
@@ -214,7 +218,6 @@ export default function AdminAssignmentsScreen() {
     }
     try {
       setSavingRing(true);
-      // Use current edges order for determinism
       const assassins = edges.map((e) => e.assassin_player_id);
       const targets = assassins.map((id) => mappingByAssassin[id]);
       const dares = assassins.map((id) => dareDraftByAssassin[id] ?? '');
@@ -237,26 +240,6 @@ export default function AdminAssignmentsScreen() {
       Alert.alert('Save failed', e?.message ?? 'Could not apply ring changes');
     } finally {
       setSavingRing(false);
-    }
-  }
-
-  async function saveDare(assassinId: string) {
-    if (!groupId) return;
-    const newText = dareDraftByAssassin[assassinId] ?? '';
-    try {
-      setSavingDareFor(assassinId);
-      await supabase.rpc('edit_active_dare', {
-        p_group_id: groupId,
-        p_assassin_player_id: assassinId,
-        p_new_dare_text: newText,
-      });
-      setEditingDareFor(null);
-      setDareModalFor(null);
-      await loadRing();
-    } catch (e: any) {
-      Alert.alert('Update failed', e?.message ?? 'Could not update dare');
-    } finally {
-      setSavingDareFor(null);
     }
   }
 
@@ -311,12 +294,6 @@ export default function AdminAssignmentsScreen() {
                     {seeding ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Seed ring</Text>}
                   </TouchableOpacity>
                   <TouchableOpacity
-                    onPress={loadRing}
-                    style={{ backgroundColor: '#e5e7eb', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
-                  >
-                    <Text style={{ color: '#111827', fontWeight: '700' }}>Refresh</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
                     onPress={toggleRingEditMode}
                     style={{ backgroundColor: ringEditMode ? '#1d4ed8' : '#e5e7eb', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
                   >
@@ -334,16 +311,18 @@ export default function AdminAssignmentsScreen() {
                 </View>
               )}
               renderItem={({ item }) => (
-                <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16, marginBottom: 12 }}>
-                  <Text style={{ fontWeight: '800' }}>{item.assassin_name} → {item.target_name}</Text>
+                <TouchableOpacity
+                  onPress={() => router.push(`/group/admin/assignments/dare/${item.assassin_player_id}`)}
+                  activeOpacity={0.8}
+                  disabled={ringEditMode}
+                  style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16, marginBottom: 12 }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={{ fontWeight: '800' }}>{item.assassin_name} → {item.target_name}</Text>
+                    <AvatarStack names={[item.target_name, item.assassin_name]} />
+                  </View>
                   <View style={{ marginTop: 6 }}>
-                    <DareCard
-                      text={item.dare_text}
-                      onEdit={() => {
-                        setDareDraftByAssassin((prev) => ({ ...prev, [item.assassin_player_id]: prev[item.assassin_player_id] ?? item.dare_text }));
-                        setDareModalFor({ assassinId: item.assassin_player_id, assassinName: item.assassin_name });
-                      }}
-                    />
+                    <DareCard text={item.dare_text} />
                   </View>
 
                   {ringEditMode && (
@@ -373,24 +352,13 @@ export default function AdminAssignmentsScreen() {
                       </View>
                     </View>
                   )}
-                </View>
+                </TouchableOpacity>
               )}
             />
           )}
         </View>
       )}
     />
-    {dareModalFor && (
-      <DareEditorModal
-        visible={!!dareModalFor}
-        assassinName={dareModalFor.assassinName}
-        value={dareDraftByAssassin[dareModalFor.assassinId] ?? ''}
-        onChangeValue={(t) => setDareDraftByAssassin((prev) => ({ ...prev, [dareModalFor.assassinId]: t }))}
-        onClose={() => setDareModalFor(null)}
-        saving={savingDareFor === dareModalFor.assassinId}
-        onSave={() => saveDare(dareModalFor.assassinId)}
-      />
-    )}
   );
 }
 
