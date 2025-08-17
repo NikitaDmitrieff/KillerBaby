@@ -1,7 +1,7 @@
 import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../../components/CollapsibleHeader';
-import { View, Text, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ActivityIndicator, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import RoleToggle from '../../role-toggle';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../../../lib/supabase';
@@ -25,8 +25,12 @@ export default function AdminConversationScreen() {
   const [profileId, setProfileId] = useState<string | null>(null);
 
   const canLoad = useMemo(() => Boolean(groupId && conversationId), [groupId, conversationId]);
+  const canSend = useMemo(
+    () => !!groupId && !!conversation && body.trim().length > 0 && conversation.conversation_kind === 'PLAYER_ADMIN',
+    [groupId, conversation, body]
+  );
 
-  async function loadThread() {
+  const loadThread = useCallback(async () => {
     if (!canLoad) return;
     try {
       setLoading(true);
@@ -37,17 +41,18 @@ export default function AdminConversationScreen() {
         .single();
       if (cErr) throw cErr;
       setConversation(convo);
-      // Fetch player's display name for header
+
       if (convo?.player_id) {
         const { data: gp } = await supabase
           .from('group_players')
           .select('display_name')
           .eq('id', convo.player_id)
           .single();
-        if (gp?.display_name) setPlayerName(gp.display_name as string);
+        setPlayerName(gp?.display_name || '');
       } else {
         setPlayerName('');
       }
+
       const { data: msgs, error: mErr } = await supabase
         .from('messages')
         .select('*')
@@ -61,12 +66,13 @@ export default function AdminConversationScreen() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [canLoad, conversationId]);
 
   useEffect(() => {
     loadThread();
-  }, [conversationId, groupId]);
+  }, [loadThread]);
 
+  // fetch auth profile id once
   useEffect(() => {
     (async () => {
       try {
@@ -76,22 +82,48 @@ export default function AdminConversationScreen() {
     })();
   }, []);
 
-  // Mark messages as read for the admin when viewing
+  // mark as read helper (admin reading incoming messages)
+  const markThreadRead = useCallback(async () => {
+    try {
+      if (!conversation?.id || !profileId) return;
+      await supabase
+        .from('messages')
+        .update({ read_at: new Date().toISOString() })
+        .eq('conversation_id', conversation.id)
+        .eq('to_profile_id', profileId)
+        .is('read_at', null);
+    } catch {}
+  }, [conversation?.id, profileId]);
+
+  // mark when first loaded & whenever list grows
   useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await supabase.auth.getUser();
-        const uid = data?.user?.id;
-        if (!conversation || !uid) return;
-        await supabase
-          .from('messages')
-          .update({ read_at: new Date().toISOString() })
-          .eq('conversation_id', conversation.id)
-          .eq('to_profile_id', uid)
-          .is('read_at', null);
-      } catch {}
-    })();
-  }, [conversation?.id]);
+    markThreadRead();
+  }, [markThreadRead, messages.length]);
+
+  // realtime subscription for new messages in this conversation
+  useEffect(() => {
+    if (!conversationId) return;
+    const ch = supabase
+      .channel(`convo-${conversationId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+        (payload) => {
+          const msg: any = payload.new;
+          setMessages((prev) => [...prev, msg]);
+          // mark as read if this new message is for the current admin
+          if (profileId && msg.to_profile_id === profileId && !msg.read_at) {
+            supabase
+              .from('messages')
+              .update({ read_at: new Date().toISOString() })
+              .eq('id', msg.id)
+              .then(() => {});
+          }
+        }
+      )
+      .subscribe();
+    return () => ch.unsubscribe();
+  }, [conversationId, profileId]);
 
   async function onRefresh() {
     setRefreshing(true);
@@ -103,7 +135,7 @@ export default function AdminConversationScreen() {
   }
 
   async function handleSend() {
-    if (!groupId || !conversation || !body.trim()) return;
+    if (!canSend) return;
     try {
       setSending(true);
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
@@ -111,27 +143,41 @@ export default function AdminConversationScreen() {
       const user = userRes?.user;
       if (!user) throw new Error('Not authenticated');
 
-      // Admin reply goes to the player in PLAYER_ADMIN conversation
-      if (conversation.conversation_kind !== 'PLAYER_ADMIN') {
-        Alert.alert('Unsupported', 'Admins can reply only in admin conversations.');
-        return;
-      }
-      const insertPayload: any = {
+      // optimistic append
+      const tmpId = `tmp-${Date.now()}`;
+      const optimistic = {
+        id: tmpId,
         group_id: groupId,
-        body: body.trim(),
-        tags: ['GENERAL'],
         conversation_id: conversation.id,
-        created_by_profile_id: user.id,
+        created_at: new Date().toISOString(),
+        body: body.trim(),
         sender_profile_id: user.id,
+        to_player_id: conversation.player_id,
         message_kind: 'ADMIN_TO_PLAYER',
         is_anonymous: false,
-        to_player_id: conversation.player_id,
+        tags: ['GENERAL'],
       };
-
-      const { error } = await supabase.from('messages').insert([insertPayload]);
-      if (error) throw error;
+      setMessages((prev) => [...prev, optimistic as any]);
+      const toSend = body.trim();
       setBody('');
-      await loadThread();
+
+      const { error } = await supabase.from('messages').insert([
+        {
+          group_id: groupId,
+          body: toSend,
+          tags: ['GENERAL'],
+          conversation_id: conversation.id,
+          created_by_profile_id: user.id,
+          sender_profile_id: user.id,
+          message_kind: 'ADMIN_TO_PLAYER',
+          is_anonymous: false,
+          to_player_id: conversation.player_id,
+        },
+      ]);
+      if (error) throw error;
+      // realtime will deliver the canonical row; we can drop the optimistic one on next reload
+      // to keep things in sync for sure, refresh quietly
+      loadThread();
     } catch (e: any) {
       Alert.alert('Send failed', e?.message ?? 'Could not send');
     } finally {
@@ -154,19 +200,15 @@ export default function AdminConversationScreen() {
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Back to inbox"
-            onPress={() => {
-              try {
-                if ((router as any).canGoBack?.()) {
-                  (router as any).back();
-                  return;
-                }
-              } catch {}
-              router.replace('/group/admin/conversation');
-            }}
-            style={{ position: 'absolute', left: 16, top: contentInsetTop + 8, zIndex: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.brandPrimary, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}
+            onPress={() => router.replace('/group/admin/conversation')}
+            style={[
+              styles.backBtn,
+              { top: contentInsetTop + 8 },
+            ]}
           >
-            <Ionicons name="chevron-back" size={22} color="#fff" />
+            <Ionicons name="chevron-back" size={20} color={COLORS.brandPrimary} />
           </TouchableOpacity>
+
           {loading ? (
             <View style={{ paddingTop: contentInsetTop + 56, paddingHorizontal: 16, alignItems: 'center' }}>
               <ActivityIndicator />
@@ -193,4 +235,23 @@ export default function AdminConversationScreen() {
   );
 }
 
-
+const styles = StyleSheet.create({
+  backBtn: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+});

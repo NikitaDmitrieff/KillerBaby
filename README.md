@@ -70,6 +70,7 @@ Both panel headers use a collapsible gradient header (`components/CollapsibleHea
 
 - **Tables**
   - **`groups`**: root entity for a match. Columns include `id`, `name`, `description`, `join_code` (unique), `created_by` (FK → `profiles.id`), `created_at`, and lifecycle fields `game_status`, `started_at`, `ended_at`.
+    - New: optional `deadline_at timestamptz` for game/phase deadline (UTC). Indexed by `ix_groups_deadline_at`.
   - **`group_players`**: membership of profiles in a group. Columns include `id`, `group_id` (FK), `display_name`, `owner_user_id` (FK → `profiles.id`, nullable), `created_at`, `is_active`, `removed_at`.
   - **`assignments`**: the ring edges. Columns include `id`, `group_id` (FK), `assassin_player_id` (FK → `group_players.id`), `target_player_id` (FK → `group_players.id`), `dare_text`, `is_active`, `reason_closed`, `created_at`, `created_by_profile_id` (FK → `profiles.id`), `closed_at`, `replaced_by_assignment_id` (self-FK).
   - **`dare_templates`**: optional, reusable prompts per group. Columns include `id`, `group_id` (FK), `text`, `is_active`, `created_by_profile_id` (FK), `created_at`, `updated_at`.

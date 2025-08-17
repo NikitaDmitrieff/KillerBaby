@@ -67,6 +67,7 @@
 - 2025-08-17: Fixed `remove_member_from_ring(p_group_id, p_removed_player_id, p_moderator_profile_id)` to: close both active edges involving the removed member before inserting the replacement edge (satisfies unique active constraints), handle the 2-player end-game case by ending the game without inserting a new edge when the hunter equals the removed member's target, link history via `replaced_by_assignment_id`, and set the member's `group_players.is_active=false` and `removed_at`.
 - 2025-08-17: Added new default dare "Ask what superpower they would pick for one day." to `dare_templates` for all existing groups via idempotent insert.
 - 2025-08-17: Extended `dare_templates` with `difficulty` (enum) and `tags` (enum[]) columns + indexes; created enums `dare_difficulty` and `dare_tag`; backfilled 74 new dare templates across all existing groups with difficulty and tags (idempotent on `lower(text)` per `group_id`).
+- 2025-08-17: Added `groups.deadline_at timestamptz null` (+ index `ix_groups_deadline_at`). Frontend supports setting deadline at group creation and shows a live countdown in the player feed.
 
 ## Dare templates – defaults
 

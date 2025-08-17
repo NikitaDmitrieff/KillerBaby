@@ -5,6 +5,8 @@ import RoleToggle from '../role-toggle';
 import { supabase } from '../../../lib/supabase';
 import { useGroupsStore } from '../../../state/groups';
 import { COLORS } from '../../../theme/colors';
+import SubduedCountdown from '../../../components/SubduedCountdown';
+import { Ionicons } from '@expo/vector-icons';
 
 type FeedItem = {
   id: string;
@@ -27,14 +29,14 @@ export default function PlayerFeedScreen() {
   // Player status state
   const [statusLoading, setStatusLoading] = useState(false);
   const [isActive, setIsActive] = useState<boolean | null>(null);
-  const [targetName, setTargetName] = useState<string>('—');
-  // Hunter is intentionally hidden from the player
+  const [targetName, setTargetName] = useState<string>('—'); // kept for parity with backend but intentionally hidden
   const [dareText, setDareText] = useState<string>('—');
   const [activeCount, setActiveCount] = useState<number | null>(null);
   const [totalElims, setTotalElims] = useState<number | null>(null);
   const [myKills, setMyKills] = useState<number | null>(null);
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const [endedAt, setEndedAt] = useState<string | null>(null);
+  const [deadlineAt, setDeadlineAt] = useState<string | null>(null);
 
   const title = useMemo(() => 'Group Feed', []);
   const subtitle = useMemo(() => (groupName ? `${groupName} updates` : 'Eliminations and updates'), [groupName]);
@@ -59,7 +61,6 @@ export default function PlayerFeedScreen() {
     if (!groupId) return;
     setLoading(true);
     try {
-      // Fetch latest membership joins
       const [{ data: gpRows, error: gpErr }, { data: aRows, error: aErr }, { data: gRow, error: gErr }] = await Promise.all([
         supabase
           .from('group_players')
@@ -77,7 +78,7 @@ export default function PlayerFeedScreen() {
           .limit(50),
         supabase
           .from('groups')
-          .select('id, started_at, ended_at')
+          .select('id, started_at, ended_at, deadline_at')
           .eq('id', groupId)
           .maybeSingle(),
       ]);
@@ -110,6 +111,7 @@ export default function PlayerFeedScreen() {
       loadedForGroupRef.current = groupId;
       setStartedAt(gRow?.started_at ?? null);
       setEndedAt(gRow?.ended_at ?? null);
+      setDeadlineAt(gRow?.deadline_at ?? null);
     } catch (e) {
       console.warn('[feed] loadInitial error', (e as any)?.message);
     } finally {
@@ -122,14 +124,9 @@ export default function PlayerFeedScreen() {
     setStatusLoading(true);
     try {
       const tasks: Array<PromiseLike<any>> = [];
-      // Active players list
       tasks.push(supabase.rpc('get_active_players', { p_group_id: groupId }));
-      // Current target
       if (playerId) {
-        tasks.push(
-          supabase.rpc('get_current_target', { p_group_id: groupId, p_assassin_player_id: playerId })
-        );
-        // My kills count
+        tasks.push(supabase.rpc('get_current_target', { p_group_id: groupId, p_assassin_player_id: playerId }));
         tasks.push(
           supabase
             .from('assignments')
@@ -140,7 +137,6 @@ export default function PlayerFeedScreen() {
             .neq('reason_closed', 'reseed')
         );
       }
-      // Total eliminations
       tasks.push(
         supabase
           .from('assignments')
@@ -151,8 +147,6 @@ export default function PlayerFeedScreen() {
       );
 
       const results = await Promise.all(tasks);
-
-      // Unpack
       const [activePlayersRes, ...rest] = results;
       const activePlayers = Array.isArray(activePlayersRes?.data) ? activePlayersRes.data : [];
       setActiveCount(activePlayers.length);
@@ -171,14 +165,11 @@ export default function PlayerFeedScreen() {
           setTargetName((targetRow.display_name as string) ?? '—');
           setDareText((targetRow.dare_text as string) ?? '—');
         } else {
-          setTargetName('—');
-          setDareText('—');
+          setTargetName('—'); setDareText('—');
         }
-
         const myKillsRes = rest[restIdx++];
         setMyKills((myKillsRes?.count as number | null) ?? 0);
       }
-
       const totalElimsRes = rest[restIdx];
       setTotalElims((totalElimsRes?.count as number | null) ?? 0);
     } catch (e) {
@@ -188,7 +179,6 @@ export default function PlayerFeedScreen() {
     }
   }, [groupId, playerId]);
 
-  // Initial load when group switches
   useEffect(() => {
     setItems([]);
     if (!groupId) return;
@@ -196,10 +186,8 @@ export default function PlayerFeedScreen() {
     loadStatus();
   }, [groupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Realtime subscriptions
   useEffect(() => {
     if (!groupId) return;
-    // Cleanup any existing channels
     if (channelsRef.current) {
       channelsRef.current.gp?.unsubscribe();
       channelsRef.current.asg?.unsubscribe();
@@ -229,7 +217,6 @@ export default function PlayerFeedScreen() {
         { event: 'UPDATE', schema: 'public', table: 'assignments', filter: `group_id=eq.${groupId}` },
         async (payload) => {
           const row: any = payload.new;
-          // Only consider transitions to closed (elimination)
           if (!row.closed_at) return;
           if (row.reason_closed === 'reseed') return;
           try {
@@ -253,7 +240,6 @@ export default function PlayerFeedScreen() {
               text: `${assassinName} eliminated ${targetNameRt} with “${(data as any).dare_text ?? 'a dare'}”`,
             };
             mergeItems([it]);
-            // Refresh status-derived counts quickly
             loadStatus();
           } catch {}
         }
@@ -274,6 +260,9 @@ export default function PlayerFeedScreen() {
           if (row.ended_at) {
             mergeItems([{ id: `${groupId}-ended-${row.ended_at}`, ts: row.ended_at, kind: 'game_ended', text: 'Game ended' }]);
             setEndedAt(row.ended_at);
+          }
+          if (typeof row.deadline_at !== 'undefined') {
+            setDeadlineAt(row.deadline_at);
           }
         }
       )
@@ -296,6 +285,18 @@ export default function PlayerFeedScreen() {
       setRefreshing(false);
     }
   }, [loadInitial, loadStatus]);
+
+  const iconFor = (kind: FeedItem['kind']) => {
+    switch (kind) {
+      case 'elimination': return { name: 'skull', tint: COLORS.brandPrimary, bg: '#fee2e2' };
+      case 'join': return { name: 'person-add', tint: '#111827', bg: '#eef2ff' };
+      case 'game_started': return { name: 'play', tint: '#065f46', bg: '#dcfce7' };
+      case 'game_ended': return { name: 'flag', tint: '#6b7280', bg: '#f3f4f6' };
+    }
+  };
+
+  const fmt = (iso: string) =>
+    new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
 
   return (
     <CollapsibleHeader
@@ -329,52 +330,60 @@ export default function PlayerFeedScreen() {
                 <RefreshControl
                   refreshing={refreshing}
                   onRefresh={onRefresh}
-                  tintColor="#9d0208"
-                  colors={["#9d0208"]}
+                  tintColor={COLORS.brandPrimary}
+                  colors={[COLORS.brandPrimary]}
                 />
               }
               ListHeaderComponent={
                 <View style={{ marginBottom: 16 }}>
+                  {!!deadlineAt && (
+                    <View style={{ marginBottom: 12 }}>
+                      <SubduedCountdown until={new Date(deadlineAt).getTime()} label="DEADLINE" />
+                      <Text style={{ color: '#9ca3af', fontSize: 12, marginTop: 6, textAlign: 'center' }}>
+                        Ends {fmt(deadlineAt)}
+                      </Text>
+                    </View>
+                  )}
+
                   <View
                     style={[
                       styles.statusCard,
                       isActive === false ? styles.statusCardEliminated : styles.statusCardActive,
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.statusTitle,
-                        isActive === false ? styles.statusTitleEliminated : styles.statusTitleActive,
-                      ]}
-                      numberOfLines={2}
-                    >
-                      {statusLoading
-                        ? 'Checking status…'
-                        : isActive == null
-                        ? '—'
-                        : isActive
-                        ? 'You are still in the game'
-                        : 'You have been eliminated'}
-                    </Text>
-                    {!!startedAt && !endedAt && (
-                      <Text style={styles.statusSub}>Game started {new Date(startedAt).toLocaleString()}</Text>
-                    )}
-                    {!!endedAt && (
-                      <Text style={styles.statusSub}>Game ended {new Date(endedAt).toLocaleString()}</Text>
-                    )}
-                  </View>
-
-                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-                    <View style={styles.cardHalf}>
-                      <Text style={styles.cardTitle}>Your Target</Text>
-                      <Text style={styles.cardBody} numberOfLines={1}>{statusLoading ? '—' : targetName}</Text>
-                      <Text style={styles.cardBodyMuted} numberOfLines={2}>{statusLoading ? '' : (dareText !== '—' ? `“${dareText}”` : '')}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View
+                        style={[
+                          styles.statusDot,
+                          isActive === false ? { backgroundColor: '#ef4444' } : { backgroundColor: '#16a34a' },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.statusTitle,
+                          isActive === false ? styles.statusTitleEliminated : styles.statusTitleActive,
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {statusLoading
+                          ? 'Checking status…'
+                          : isActive == null
+                          ? '—'
+                          : isActive
+                          ? 'You are still in the game'
+                          : 'You have been eliminated'}
+                      </Text>
                     </View>
+
+                    {!!startedAt && !endedAt && (
+                      <Text style={styles.statusSub}>Game started {fmt(startedAt)}</Text>
+                    )}
+                    {!!endedAt && <Text style={styles.statusSub}>Game ended {fmt(endedAt)}</Text>}
                   </View>
 
                   <View style={styles.statsRow}>
                     <View style={styles.statPill}>
-                      <Text style={styles.statLabel}>Active</Text>
+                      <Text style={styles.statLabel}>Alive</Text>
                       <Text style={styles.statValue}>{activeCount ?? '—'}</Text>
                     </View>
                     <View style={styles.statPill}>
@@ -386,14 +395,31 @@ export default function PlayerFeedScreen() {
                       <Text style={styles.statValue}>{myKills ?? '—'}</Text>
                     </View>
                   </View>
+
+                  <Text style={styles.sectionHeader}>Recent Activity</Text>
+
+                  {items.length === 0 && (
+                    <View style={styles.emptyCard}>
+                      <Text style={styles.emptyTitle}>No activity yet</Text>
+                      <Text style={styles.emptySub}>When players join or get eliminated, updates will appear here.</Text>
+                    </View>
+                  )}
                 </View>
               }
-              renderItem={({ item }) => (
-                <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16, marginBottom: 12 }}>
-                  <Text style={{ color: '#374151' }}>{item.text}</Text>
-                  <Text style={{ color: '#9ca3af', marginTop: 6, fontSize: 12 }}>{new Date(item.ts).toLocaleString()}</Text>
-                </View>
-              )}
+              renderItem={({ item, index }) => {
+                const icon = iconFor(item.kind);
+                return (
+                  <View style={styles.itemRow}>
+                    <View style={[styles.itemIconWrap, { backgroundColor: icon.bg }]}>
+                      <Ionicons name={icon.name as any} size={16} color={icon.tint} />
+                    </View>
+                    <View style={styles.itemContent}>
+                      <Text style={styles.itemText}>{item.text}</Text>
+                      <Text style={styles.itemTs}>{fmt(item.ts)}</Text>
+                    </View>
+                  </View>
+                );
+              }}
             />
           )}
         </View>
@@ -416,70 +442,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#fee2e2',
     borderColor: '#ef4444',
   },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
   statusTitle: {
     fontWeight: '800',
     fontSize: 18,
   },
-  statusTitleActive: {
-    color: '#111827',
-  },
-  statusTitleEliminated: {
-    color: '#991b1b',
-  },
+  statusTitleActive: { color: '#111827' },
+  statusTitleEliminated: { color: '#991b1b' },
   statusSub: {
     color: '#6b7280',
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 6,
   },
-  heroCard: {
-    borderRadius: 16,
-    padding: 16,
-  },
-  heroIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#ffffff33',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroLabel: {
-    color: '#ffffffcc',
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
-  heroTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-  heroSub: {
-    color: '#ffffffcc',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  cardHalf: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#e5e7eb',
-  },
-  cardTitle: {
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: 6,
-  },
-  cardBody: {
-    color: '#111827',
-  },
-  cardBodyMuted: {
-    color: '#6b7280',
-    marginTop: 4,
-  },
+
   statsRow: {
     flexDirection: 'row',
     gap: 10,
@@ -494,15 +473,47 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#e5e7eb',
   },
-  statLabel: {
+  statLabel: { color: '#6b7280', fontSize: 12, fontWeight: '700' },
+  statValue: { color: COLORS.brandPrimary, fontSize: 16, fontWeight: '800', marginTop: 2 },
+
+  sectionHeader: {
+    marginTop: 16,
+    marginBottom: 8,
     color: '#6b7280',
     fontSize: 12,
+    letterSpacing: 1.1,
     fontWeight: '700',
   },
-  statValue: {
-    color: COLORS.brandPrimary,
-    fontSize: 16,
-    fontWeight: '800',
-    marginTop: 2,
+
+  emptyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e5e7eb',
   },
+  emptyTitle: { fontWeight: '800', color: '#111827' },
+  emptySub: { color: '#6b7280', marginTop: 4, fontSize: 12 },
+
+  itemRow: {
+    flexDirection: 'row',
+    gap: 12,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e5e7eb',
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  itemIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemContent: { flex: 1 },
+  itemText: { color: '#111827', fontWeight: '600' },
+  itemTs: { color: '#9ca3af', marginTop: 4, fontSize: 12 },
 });

@@ -1,10 +1,11 @@
 import CollapsibleHeader, { CollapsibleHeaderAccessory } from './CollapsibleHeader';
-import { View, Text, ActivityIndicator, FlatList, RefreshControl, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, ActivityIndicator, FlatList, RefreshControl, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import RoleToggle from '../app/group/role-toggle';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { useGroupsStore } from '../state/groups';
+import { Ionicons } from '@expo/vector-icons';
 
 type Mode = 'player' | 'admin';
 
@@ -37,13 +38,10 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
       let convos: any[] = [];
       if (mode === 'player') {
         // Ensure the three default conversations exist: Admin, Target, Hunter
-        // 1) Resolve admin profile
         const groupPromise = supabase.from('groups').select('created_by').eq('id', groupId as string).single();
-        // 2) Resolve current target via RPC
         const targetPromise = playerId
           ? supabase.rpc('get_current_target', { p_group_id: groupId as string, p_assassin_player_id: playerId as string })
           : Promise.resolve({ data: null });
-        // 3) Resolve current hunter (fallback to assignments if RPC unavailable)
         const hunterRpcPromise = playerId
           ? supabase.rpc('get_current_hunter', { p_group_id: groupId as string, p_target_player_id: playerId as string })
           : Promise.resolve({ data: null });
@@ -58,7 +56,6 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
         const hunterRow = Array.isArray((hunterRpcRes as any)?.data) ? (hunterRpcRes as any)?.data?.[0] : null;
         hunterPlayerId = hunterRow?.hunter_player_id ?? hunterRow?.assassin_player_id ?? null;
         if (!hunterPlayerId && groupId && playerId) {
-          // Fallback: look up active assignment where this player is target
           const { data: assignRow } = await supabase
             .from('assignments')
             .select('assassin_player_id, closed_at')
@@ -69,7 +66,6 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
           hunterPlayerId = Array.isArray(assignRow) ? (assignRow[0]?.assassin_player_id as string) : null;
         }
 
-        // Helper to find-or-create a conversation
         async function ensureConversation(where: Record<string, any>, insertRow: Record<string, any>) {
           const query = supabase.from('conversations').select('*').eq('group_id', groupId as string);
           for (const [k, v] of Object.entries(where)) (query as any).eq(k, v);
@@ -86,7 +82,6 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
         }
 
         const results: any[] = [];
-        // Admin convo
         if (playerId) {
           const adminConvo = await ensureConversation(
             { conversation_kind: 'PLAYER_ADMIN', player_id: playerId },
@@ -94,7 +89,6 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
           );
           results.push(adminConvo);
         }
-        // Target convo (you → your target)
         if (playerId && targetPlayerId) {
           const targetConvo = await ensureConversation(
             { conversation_kind: 'PLAYER_TARGET', player_id: playerId, target_player_id: targetPlayerId },
@@ -102,7 +96,6 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
           );
           results.push(targetConvo);
         }
-        // Hunter convo (your hunter → you)
         if (hunterPlayerId && playerId) {
           const hunterConvo = await ensureConversation(
             { conversation_kind: 'PLAYER_TARGET', player_id: hunterPlayerId, target_player_id: playerId },
@@ -111,7 +104,6 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
           results.push(hunterConvo);
         }
 
-        // Add placeholders if needed so players always see 3 conversations
         const haveTargetConvo = results.some((c) => c.conversation_kind === 'PLAYER_TARGET' && c.player_id === playerId && c.target_player_id);
         const haveHunterConvo = results.some((c) => c.conversation_kind === 'PLAYER_TARGET' && c.target_player_id === playerId);
 
@@ -177,10 +169,8 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
         setNameMap({});
       }
 
-      // Load unread counts per conversation
-      const convIds = convos
-        .map((c: any) => c.id)
-        .filter((id: any) => typeof id === 'number');
+      // Unread counts
+      const convIds = convos.map((c: any) => c.id).filter((id: any) => typeof id === 'number');
       if (convIds.length > 0) {
         if (mode === 'player' && playerId) {
           const { data: unreadRows } = await supabase
@@ -250,6 +240,25 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
     }
   }
 
+  const fmtWhen = (iso: string) => {
+    const d = new Date(iso);
+    const today = new Date(); today.setHours(0,0,0,0);
+    const that = new Date(d); that.setHours(0,0,0,0);
+    const diff = Math.round((+that - +today) / 86400000);
+    if (diff === 0) return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(d);
+    if (diff === -1) return 'Yesterday';
+    return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(d);
+  };
+
+  const kindMeta = (item: any) => {
+    if (item.conversation_kind === 'PLAYER_ADMIN') {
+      return { icon: 'shield-checkmark', bg: '#f3f4f6', tint: '#111827', label: 'Admin', sub: mode === 'player' ? 'You ↔ Admin' : 'Player ↔ Admin' };
+    }
+    const isHunter = item.target_player_id === playerId; // their hunter → you
+    if (isHunter) return { icon: 'skull', bg: '#fee2e2', tint: '#b91c1c', label: 'Hunter', sub: 'Your hunter' };
+    return { icon: 'person', bg: '#eef2ff', tint: '#1f2937', label: 'Target', sub: 'You and your target' };
+  };
+
   return (
     <CollapsibleHeader
       title={title}
@@ -267,7 +276,7 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
           scrollEventThrottle={16}
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingTop: contentInsetTop, paddingHorizontal: 16, paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#9d0208" colors={["#9d0208"]} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#9d0208" colors={['#9d0208']} />}
         >
           {loading ? (
             <View style={{ paddingVertical: 20, alignItems: 'center' }}>
@@ -275,7 +284,10 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
               <Text style={{ marginTop: 8, color: '#6b7280' }}>Loading…</Text>
             </View>
           ) : conversations.length === 0 ? (
-            <Text style={{ color: '#6b7280' }}>No conversations yet.</Text>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No conversations yet</Text>
+              <Text style={styles.emptySub}>Messages will appear here when the game gets going.</Text>
+            </View>
           ) : (
             <FlatList
               scrollEnabled={false}
@@ -283,43 +295,55 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
               keyExtractor={(item) => String(item.id)}
               ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
               renderItem={({ item }) => {
-                const isAdminConvo = item.conversation_kind === 'PLAYER_ADMIN';
-                const isHunterTarget = item.conversation_kind === 'PLAYER_TARGET';
                 const isPlaceholder = typeof item.id !== 'number';
-                const titleText = mode === 'player'
-                  ? (isAdminConvo
-                      ? 'Admin'
-                      : (item.player_id === playerId
-                          ? (nameMap[item.target_player_id] || 'Target')
-                          : 'Hunter'))
-                  : (nameMap[item.player_id] || 'Unknown player');
-                const when = item.last_message_at ? new Date(item.last_message_at).toLocaleString() : new Date(item.created_at).toLocaleString();
-                const subtitleText = mode === 'player'
-                  ? (isAdminConvo ? 'You and the admin' : (item.target_player_id === playerId ? 'Your hunter' : 'You and your target'))
-                  : 'Player ↔ Admin';
+                const meta = kindMeta(item);
                 const unreadCount = typeof item.id === 'number' ? (unreadMap[String(item.id)] || 0) : 0;
+                const isAdminConvo = item.conversation_kind === 'PLAYER_ADMIN';
+                const titleText =
+                  mode === 'player'
+                    ? isAdminConvo
+                      ? 'Admin'
+                      : item.player_id === playerId
+                      ? nameMap[item.target_player_id] || 'Target'
+                      : 'Hunter'
+                    : nameMap[item.player_id] || 'Unknown player';
+                const whenIso = item.last_message_at || item.created_at;
+                const when = whenIso ? fmtWhen(whenIso) : '';
+
                 return (
                   <TouchableOpacity
                     disabled={isPlaceholder}
                     onPress={() => {
-                      if (isPlaceholder) return;
-                      router.push(`${conversationBasePath}/${item.id}`);
+                      if (!isPlaceholder) router.push(`${conversationBasePath}/${item.id}`);
                     }}
-                    style={{ opacity: isPlaceholder ? 0.7 : 1 }}
+                    style={{ opacity: isPlaceholder ? 0.65 : 1 }}
                   >
-                    <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#e5e7eb', position: 'relative' }}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <Text style={{ fontWeight: '800' }}>{titleText}</Text>
-                          {unreadCount > 0 && (
-                            <View style={{ backgroundColor: '#dc2626', minWidth: 8, height: 8, borderRadius: 8, marginLeft: 6 }} />
-                          )}
+                    <View style={styles.card}>
+                      <View style={styles.row}>
+                        <View style={[styles.iconWrap, { backgroundColor: meta.bg }]}>
+                          <Ionicons name={meta.icon as any} size={16} color={meta.tint} />
                         </View>
-                        <Text style={{ color: '#6b7280', fontSize: 12 }}>{when}</Text>
+
+                        <View style={{ flex: 1 }}>
+                          <View style={styles.titleRow}>
+                            <Text style={styles.title} numberOfLines={1}>
+                              {titleText}
+                            </Text>
+                            {!!when && <Text style={styles.when}>{when}</Text>}
+                          </View>
+                          <Text style={styles.subtitle} numberOfLines={1}>
+                            {isPlaceholder ? (meta.label === 'Target' ? 'Target not assigned yet' : 'Hunter unknown yet') : meta.sub}
+                          </Text>
+                        </View>
+
+                        {unreadCount > 0 && (
+                          <View style={styles.badge}>
+                            <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                          </View>
+                        )}
+
+                        <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
                       </View>
-                      <Text style={{ color: '#6b7280', marginTop: 4, fontSize: 12 }}>
-                        {subtitleText}
-                      </Text>
                     </View>
                   </TouchableOpacity>
                 );
@@ -332,4 +356,46 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
   );
 }
 
+const styles = StyleSheet.create({
+  emptyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  emptyTitle: { fontWeight: '800', color: '#111827' },
+  emptySub: { color: '#6b7280', marginTop: 4, fontSize: 12 },
 
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  iconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  title: { fontWeight: '800', color: '#111827', maxWidth: '70%' },
+  when: { color: '#9ca3af', fontSize: 12, marginLeft: 8 },
+  subtitle: { color: '#6b7280', fontSize: 12, marginTop: 4 },
+
+  badge: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 6,
+    borderRadius: 11,
+    backgroundColor: '#dc2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+  },
+  badgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+});

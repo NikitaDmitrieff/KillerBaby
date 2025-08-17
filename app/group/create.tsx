@@ -1,17 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { COLORS } from '../../theme/colors';
 import { useGroupsStore } from '../../state/groups';
+import DateTimeField from '../../components/DateTimeField';
 
 export default function GroupCreateScreen() {
   const { setSelectedGroup } = useGroupsStore();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [deadlineLocal, setDeadlineLocal] = useState<Date | null>(null);
   const [guestName, setGuestName] = useState('');
   const [guests, setGuests] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  // Pre-fill deadline 48 hours from now by default (local time)
+  useEffect(() => {
+    setDeadlineLocal(new Date(Date.now() + 48 * 60 * 60 * 1000));
+  }, []);
 
   function addGuest() {
     const trimmed = guestName.trim();
@@ -26,6 +33,8 @@ export default function GroupCreateScreen() {
   }
 
   const canSubmit = name.trim().length >= 2;
+
+  
 
   const onSubmit = async () => {
     const groupName = name.trim();
@@ -53,9 +62,11 @@ export default function GroupCreateScreen() {
       }
       if (!user) throw new Error('Not signed in');
 
+      const deadlineIso = deadlineLocal ? deadlineLocal.toISOString() : null;
+
       const { data: inserted, error: gErr } = await supabase
         .from('groups')
-        .insert({ name: groupName, description: description.trim() || null, created_by: user.id })
+        .insert({ name: groupName, description: description.trim() || null, created_by: user.id, deadline_at: deadlineIso })
         .select('id, name')
         .single();
       if (gErr) throw gErr;
@@ -98,6 +109,32 @@ export default function GroupCreateScreen() {
             placeholder="A private group for our weekly games"
             style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}
           />
+        </View>
+
+        <View style={{ gap: 8 }}>
+          <Text style={{ fontWeight: '700' }}>Deadline (optional)</Text>
+          <DateTimeField
+            label="Deadline"
+            value={deadlineLocal ?? undefined}
+            onChange={(d) => setDeadlineLocal(d)}
+            minuteInterval={5}
+            minimumDate={new Date()}
+          />
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => setDeadlineLocal(new Date(Date.now() + 48 * 60 * 60 * 1000))}
+              style={{ paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: '#eef2ff', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ color: '#1f2937', fontWeight: '700' }}>Reset to +48h</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setDeadlineLocal(null)}
+              style={{ paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ color: '#6b7280', fontWeight: '700' }}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={{ color: '#6b7280', fontSize: 12 }}>Defaults to 48 hours from now. Clear to skip.</Text>
         </View>
 
         <View style={{ backgroundColor: '#f7f7fb', padding: 16, borderRadius: 16 }}>

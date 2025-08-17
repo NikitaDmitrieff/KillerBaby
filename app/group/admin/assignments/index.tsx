@@ -1,5 +1,6 @@
 import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../../components/CollapsibleHeader';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Platform } from 'react-native';
+import SegmentedControl from '@react-native-segmented-control/segmented-control';
 import RoleToggle from '../../role-toggle';
 import { useEffect, useMemo, useState } from 'react';
 import { useGroupsStore } from '../../../../state/groups';
@@ -10,6 +11,9 @@ import Svg, { Circle as SvgCircle, Line as SvgLine, Path as SvgPath, Text as Svg
 
 type EdgeRow = { assassin_player_id: string; assassin_name: string; target_player_id: string; target_name: string; dare_text: string };
 type PlayerRow = { player_id: string; display_name: string };
+
+const TABS = ['Dares', 'Ring'] as const;
+type Tab = typeof TABS[number];
 
 function getInitials(name: string | undefined | null) {
   const safe = (name ?? '').trim();
@@ -212,6 +216,8 @@ export default function AdminAssignmentsScreen() {
   const [savingRing, setSavingRing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [addedAssassinIds, setAddedAssassinIds] = useState<string[]>([]);
+  const [tabIndex, setTabIndex] = useState(0);
+  const currentTab: Tab = TABS[tabIndex];
 
   async function loadRing() {
     if (!groupId) return;
@@ -288,7 +294,6 @@ export default function AdminAssignmentsScreen() {
       }
       const assassins = ids;
       const targets = ids.slice(1).concat(ids.slice(0, 1));
-      // Fetch dare templates for this group
       const { data: tmplRows, error: tmplErr } = await supabase
         .from('dare_templates')
         .select('text')
@@ -298,9 +303,7 @@ export default function AdminAssignmentsScreen() {
       const templates: string[] = ((tmplRows as any[]) ?? [])
         .map((r) => (r?.text as string) || '')
         .filter((t) => !!t && t.trim().length > 0);
-      // Map player id -> display name
       const nameById = new Map<string, string>(((players as any[]) ?? []).map((p: any) => [p.player_id as string, (p.display_name as string) || '—']));
-      // Helper to personalize a template to the target
       function personalize(templateText: string, targetId: string): string {
         const name = nameById.get(targetId) || 'your target';
         try {
@@ -309,7 +312,6 @@ export default function AdminAssignmentsScreen() {
           return templateText;
         }
       }
-      // Generate dares: random template per target, personalized
       const dares = assassins.map((assassinId: string, i: number) => {
         const targetId = targets[i];
         if (templates.length === 0) return 'Be creative!';
@@ -341,8 +343,6 @@ export default function AdminAssignmentsScreen() {
     setRingEditMode((v) => !v);
   }
 
-  
-
   function setTargetForAssassin(assassinId: string, targetId: string) {
     setMappingByAssassin((prev) => ({ ...prev, [assassinId]: targetId }));
   }
@@ -358,7 +358,6 @@ export default function AdminAssignmentsScreen() {
       if (prev.includes(playerId)) {
         return prev.filter((id) => id !== playerId);
       }
-      // Initialize defaults for new participant
       setDareDraftByAssassin((d) => (d[playerId] ? d : { ...d, [playerId]: 'Be creative!' }));
       return [...prev, playerId];
     });
@@ -447,6 +446,8 @@ export default function AdminAssignmentsScreen() {
     }
   }
 
+  const listData = edges; // Both tabs list assignments
+
   return (
     <CollapsibleHeader
       title={"Assignments"}
@@ -468,88 +469,120 @@ export default function AdminAssignmentsScreen() {
               ref={scrollRef as any}
               onScroll={onScroll}
               scrollEventThrottle={16}
-              data={edges}
+              data={listData}
               keyExtractor={(i) => `${i.assassin_player_id}-${i.target_player_id}`}
               contentContainerStyle={{ paddingTop: contentInsetTop, paddingHorizontal: 16, paddingBottom: 100 }}
               refreshControl={
                 <RefreshControl
                   refreshing={refreshing}
                   onRefresh={onRefresh}
-                  tintColor="#9d0208"
-                  colors={["#9d0208"]}
+                  tintColor={COLORS.brandPrimary}
+                  colors={[COLORS.brandPrimary]}
                 />
               }
               ListHeaderComponent={(
                 <View style={{ gap: 12, marginBottom: 12 }}>
-                  <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Ring diagram</Text>
-                    <View style={{ marginTop: 8 }}>
+                  {/* Toggle */}
+                  <View
+                    style={{
+                      backgroundColor: '#ffffff',
+                      borderWidth: 1,
+                      borderColor: '#e5e7eb',
+                      borderRadius: 12,
+                      padding: 12,
+                      shadowColor: '#000',
+                      shadowOpacity: 0.06,
+                      shadowRadius: 8,
+                      shadowOffset: { width: 0, height: 4 },
+                      elevation: 2,
+                    }}
+                  >
+                    <SegmentedControl
+                      values={[...TABS]}
+                      selectedIndex={tabIndex}
+                      onChange={(event) => setTabIndex(event.nativeEvent.selectedSegmentIndex)}
+                      appearance="dark"
+                      tintColor={COLORS.brandPrimary}
+                      backgroundColor={Platform.OS === 'ios' ? '#f3f4f6' : undefined}
+                      fontStyle={{ fontWeight: '600' }}
+                      activeFontStyle={{ fontWeight: '800' }}
+                    />
+                  </View>
+
+                  {/* Ring diagram — plain, no card */}
+                  {currentTab === 'Ring' && (
+                    <View style={{ marginTop: 4 }}>
                       <RingVisualizer edges={edges} />
                     </View>
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
-                    <TouchableOpacity
-                      onPress={handleSeed}
-                      disabled={seeding}
-                      style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
-                    >
-                      {seeding ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Seed ring</Text>}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={toggleRingEditMode}
-                      style={{ backgroundColor: ringEditMode ? COLORS.brandPrimary : '#e5e7eb', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
-                    >
-                      <Text style={{ color: ringEditMode ? '#fff' : '#111827', fontWeight: '700' }}>{ringEditMode ? 'Editing ring' : 'Edit ring'}</Text>
-                    </TouchableOpacity>
-                    {ringEditMode && (
+                  )}
+
+                  {/* Ring controls */}
+                  {currentTab === 'Ring' && (
+                    <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
                       <TouchableOpacity
-                        onPress={saveRingChanges}
-                        disabled={savingRing}
+                        onPress={handleSeed}
+                        disabled={seeding}
                         style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
                       >
-                        {savingRing ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Save ring</Text>}
+                        {seeding ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Seed ring</Text>}
                       </TouchableOpacity>
-                    )}
-                    {ringEditMode && (
-                      <View style={{ width: '100%' }}>
-                        <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}>
-                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Add players to ring</Text>
-                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
-                            {deadPlayers
-                              .filter((p) => !edges.some((e) => e.assassin_player_id === p.player_id) && !addedAssassinIds.includes(p.player_id))
-                              .map((p) => (
-                                <TouchableOpacity
-                                  key={`add-${p.player_id}`}
-                                  onPress={() => toggleAddParticipant(p.player_id)}
-                                  style={{ backgroundColor: '#f3f4f6', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9999 }}
-                                >
-                                  <Text style={{ color: '#111827', fontWeight: '600' }}>{p.display_name}</Text>
-                                </TouchableOpacity>
-                              ))}
-                            {addedAssassinIds.map((id) => {
-                              const name = getName(id);
-                              return (
-                                <TouchableOpacity
-                                  key={`added-${id}`}
-                                  onPress={() => toggleAddParticipant(id)}
-                                  style={{ backgroundColor: '#1d4ed8', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9999 }}
-                                >
-                                  <Text style={{ color: '#fff', fontWeight: '700' }}>Added: {name} ✕</Text>
-                                </TouchableOpacity>
-                              );
-                            })}
+                      <TouchableOpacity
+                        onPress={toggleRingEditMode}
+                        style={{ backgroundColor: ringEditMode ? COLORS.brandPrimary : '#e5e7eb', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
+                      >
+                        <Text style={{ color: ringEditMode ? '#fff' : '#111827', fontWeight: '700' }}>
+                          {ringEditMode ? 'Editing ring' : 'Edit ring'}
+                        </Text>
+                      </TouchableOpacity>
+                      {ringEditMode && (
+                        <TouchableOpacity
+                          onPress={saveRingChanges}
+                          disabled={savingRing}
+                          style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
+                        >
+                          {savingRing ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Save ring</Text>}
+                        </TouchableOpacity>
+                      )}
+                      {ringEditMode && (
+                        <View style={{ width: '100%' }}>
+                          <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}>
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Add players to ring</Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                              {deadPlayers
+                                .filter((p) => !edges.some((e) => e.assassin_player_id === p.player_id) && !addedAssassinIds.includes(p.player_id))
+                                .map((p) => (
+                                  <TouchableOpacity
+                                    key={`add-${p.player_id}`}
+                                    onPress={() => toggleAddParticipant(p.player_id)}
+                                    style={{ backgroundColor: '#f3f4f6', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9999 }}
+                                  >
+                                    <Text style={{ color: '#111827', fontWeight: '600' }}>{p.display_name}</Text>
+                                  </TouchableOpacity>
+                                ))}
+                              {addedAssassinIds.map((id) => {
+                                const name = getName(id);
+                                return (
+                                  <TouchableOpacity
+                                    key={`added-${id}`}
+                                    onPress={() => toggleAddParticipant(id)}
+                                    style={{ backgroundColor: '#1d4ed8', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9999 }}
+                                  >
+                                    <Text style={{ color: '#fff', fontWeight: '700' }}>Added: {name} ✕</Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
                           </View>
                         </View>
-                      </View>
-                    )}
-                  </View>
+                      )}
+                    </View>
+                  )}
                 </View>
               )}
               renderItem={({ item }) => (
                 <TouchableOpacity
                   onPress={() => router.push(`/group/admin/assignments/dare/${item.assassin_player_id}`)}
                   activeOpacity={0.8}
-                  disabled={ringEditMode}
                   style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16, marginBottom: 12 }}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -560,30 +593,30 @@ export default function AdminAssignmentsScreen() {
                     <DareCard text={item.dare_text} />
                   </View>
 
-                  {ringEditMode && (
+                  {currentTab === 'Ring' && ringEditMode && (
                     <View style={{ marginTop: 12 }}>
                       <Text style={{ fontWeight: '700', marginBottom: 6 }}>Select target for {item.assassin_name}</Text>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                         {getParticipantOptions().map((p) => {
-                            const isSelected = mappingByAssassin[item.assassin_player_id] === p.player_id;
-                            const isSelf = p.player_id === item.assassin_player_id;
-                            return (
-                              <TouchableOpacity
-                                key={`${item.assassin_player_id}-${p.player_id}`}
-                                onPress={() => setTargetForAssassin(item.assassin_player_id, p.player_id)}
-                                disabled={isSelf}
-                                style={{
-                                  backgroundColor: isSelected ? '#1d4ed8' : '#f3f4f6',
-                                  paddingHorizontal: 10,
-                                  paddingVertical: 8,
-                                  borderRadius: 9999,
-                                  opacity: isSelf ? 0.5 : 1,
-                                }}
-                              >
-                                <Text style={{ color: isSelected ? '#fff' : '#111827', fontWeight: '600' }}>{p.display_name}</Text>
-                              </TouchableOpacity>
-                            );
-                          })}
+                          const isSelected = mappingByAssassin[item.assassin_player_id] === p.player_id;
+                          const isSelf = p.player_id === item.assassin_player_id;
+                          return (
+                            <TouchableOpacity
+                              key={`${item.assassin_player_id}-${p.player_id}`}
+                              onPress={() => setTargetForAssassin(item.assassin_player_id, p.player_id)}
+                              disabled={isSelf}
+                              style={{
+                                backgroundColor: isSelected ? '#1d4ed8' : '#f3f4f6',
+                                paddingHorizontal: 10,
+                                paddingVertical: 8,
+                                borderRadius: 9999,
+                                opacity: isSelf ? 0.5 : 1,
+                              }}
+                            >
+                              <Text style={{ color: isSelected ? '#fff' : '#111827', fontWeight: '600' }}>{p.display_name}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
                       </View>
                     </View>
                   )}
@@ -591,7 +624,7 @@ export default function AdminAssignmentsScreen() {
               )}
               ListFooterComponent={(
                 <View style={{ gap: 8 }}>
-                  {ringEditMode && addedAssassinIds.length > 0 && (
+                  {currentTab === 'Ring' && ringEditMode && addedAssassinIds.length > 0 && (
                     <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}>
                       <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Targets for added players</Text>
                       {addedAssassinIds.map((id) => {
@@ -601,32 +634,31 @@ export default function AdminAssignmentsScreen() {
                             <Text style={{ fontWeight: '700', marginBottom: 6 }}>Select target for {name}</Text>
                             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                               {getParticipantOptions().map((p) => {
-                                  const isSelected = mappingByAssassin[id] === p.player_id;
-                                  const isSelf = p.player_id === id;
-                                  return (
-                                    <TouchableOpacity
-                                      key={`${id}-${p.player_id}`}
-                                      onPress={() => setTargetForAssassin(id, p.player_id)}
-                                      disabled={isSelf}
-                                      style={{
-                                        backgroundColor: isSelected ? '#1d4ed8' : '#f3f4f6',
-                                        paddingHorizontal: 10,
-                                        paddingVertical: 8,
-                                        borderRadius: 9999,
-                                        opacity: isSelf ? 0.5 : 1,
-                                      }}
-                                    >
-                                      <Text style={{ color: isSelected ? '#fff' : '#111827', fontWeight: '600' }}>{p.display_name}</Text>
-                                    </TouchableOpacity>
-                                  );
-                                })}
+                                const isSelected = mappingByAssassin[id] === p.player_id;
+                                const isSelf = p.player_id === id;
+                                return (
+                                  <TouchableOpacity
+                                    key={`${id}-${p.player_id}`}
+                                    onPress={() => setTargetForAssassin(id, p.player_id)}
+                                    disabled={isSelf}
+                                    style={{
+                                      backgroundColor: isSelected ? '#1d4ed8' : '#f3f4f6',
+                                      paddingHorizontal: 10,
+                                      paddingVertical: 8,
+                                      borderRadius: 9999,
+                                      opacity: isSelf ? 0.5 : 1,
+                                    }}
+                                  >
+                                    <Text style={{ color: isSelected ? '#fff' : '#111827', fontWeight: '600' }}>{p.display_name}</Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
                             </View>
                           </View>
                         );
                       })}
                     </View>
                   )}
-                  
                 </View>
               )}
             />
@@ -636,5 +668,3 @@ export default function AdminAssignmentsScreen() {
     />
   );
 }
-
-

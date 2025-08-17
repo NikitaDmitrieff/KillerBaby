@@ -9,12 +9,13 @@ type PlayerRow = { id: string; display_name: string; owner_user_id: string | nul
 
 export default function JoinGroupAsPlayerScreen() {
   const router = useRouter();
-  const { id: groupId, name: groupName, playerId, setSelectedPlayer, setSelectedGroup } = useGroupsStore();
+  const { id: groupId, name: groupName, playerId, setSelectedPlayer, setSelectedGroup, setRoleMode } = useGroupsStore();
   const [loading, setLoading] = useState(true);
   const [placeholders, setPlaceholders] = useState<PlayerRow[]>([]);
   const [query, setQuery] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [groupLabel, setGroupLabel] = useState<string | null>(groupName ?? null);
+  const [isAdminOfGroup, setIsAdminOfGroup] = useState<boolean>(false);
 
   // If player already selected for this group, skip this screen
   useEffect(() => {
@@ -29,19 +30,20 @@ export default function JoinGroupAsPlayerScreen() {
     (async () => {
       try {
         if (!groupId) return;
-        const looksUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(groupName ?? '');
-        if (!groupName || looksUuid) {
-          const { data } = await supabase
-            .from('groups')
-            .select('id, name')
-            .eq('id', groupId)
-            .maybeSingle();
-          if (!mounted) return;
-          if (data?.name) setGroupLabel(data.name);
-          else setGroupLabel(groupName ?? groupId);
-        } else {
-          setGroupLabel(groupName);
-        }
+        // Load current user profile id (assumes profiles.id == auth.user.id)
+        const { data: userRes } = await supabase.auth.getUser();
+        const currentProfileId = userRes.user?.id ?? null;
+
+        // Always fetch group name and creator to determine admin option visibility
+        const { data } = await supabase
+          .from('groups')
+          .select('id, name, created_by')
+          .eq('id', groupId)
+          .maybeSingle();
+        if (!mounted) return;
+        if (data?.name) setGroupLabel(data.name);
+        else setGroupLabel(groupName ?? groupId ?? null);
+        setIsAdminOfGroup(!!currentProfileId && !!data?.created_by && data.created_by === currentProfileId);
       } catch {
         if (mounted) setGroupLabel(groupName ?? groupId ?? null);
       }
@@ -138,6 +140,18 @@ export default function JoinGroupAsPlayerScreen() {
     }
   }
 
+  async function continueAsAdmin() {
+    try {
+      setSubmitting(true);
+      await setRoleMode('admin');
+      router.replace('/group');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Could not continue as admin');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
       <View style={{ padding: 16, gap: 10 }}>
@@ -160,6 +174,25 @@ export default function JoinGroupAsPlayerScreen() {
             <Text style={{ color: '#fff', fontWeight: '700' }}>Use this</Text>
           </TouchableOpacity>
         </View>
+        {isAdminOfGroup && (
+          <View style={{ marginTop: 8 }}>
+            <TouchableOpacity
+              disabled={submitting}
+              onPress={continueAsAdmin}
+              style={{
+                borderWidth: 1,
+                borderColor: COLORS.brandPrimary,
+                backgroundColor: '#ffffff',
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                borderRadius: 12,
+              }}
+            >
+              <Text style={{ color: COLORS.brandPrimary, fontWeight: '700' }}>Continue as Admin</Text>
+            </TouchableOpacity>
+            <Text style={{ color: '#6b7280', marginTop: 6 }}>Admins manage the game and do not play as regular players.</Text>
+          </View>
+        )}
       </View>
 
       {loading ? (

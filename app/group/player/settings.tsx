@@ -4,14 +4,13 @@ import { useEffect, useState } from 'react';
 import RoleToggle from '../role-toggle';
 import { useGroupsStore } from '../../../state/groups';
 import { supabase } from '../../../lib/supabase';
-import * as Clipboard from 'expo-clipboard';
 import { COLORS } from '../../../theme/colors';
 
 export default function PlayerSettingsScreen() {
   const [notifications, setNotifications] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const { id: groupId, playerId } = useGroupsStore();
+  const { playerId } = useGroupsStore();
   const [displayName, setDisplayName] = useState('');
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [savingName, setSavingName] = useState(false);
@@ -65,15 +64,7 @@ export default function PlayerSettingsScreen() {
     }
   }
 
-  async function onCopyGroupId() {
-    if (!groupId) return;
-    try {
-      await Clipboard.setStringAsync(groupId);
-      Alert.alert('Copied', 'Group ID copied to clipboard.');
-    } catch (e) {
-      Alert.alert('Copy failed', 'Could not copy group ID.');
-    }
-  }
+  
 
   return (
     <CollapsibleHeader
@@ -131,23 +122,7 @@ export default function PlayerSettingsScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={{ height: 16 }} />
-
-            <Text style={{ fontWeight: '700' }}>Invite friends</Text>
-            <Text style={{ color: '#6b7280', marginTop: 4 }}>Share this group ID for others to join:</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-              <View style={{ flex: 1, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
-                <Text numberOfLines={1} style={{ color: '#111827' }}>{groupId ?? '—'}</Text>
-              </View>
-              <View style={{ width: 8 }} />
-              <TouchableOpacity
-                onPress={onCopyGroupId}
-                disabled={!groupId}
-                style={{ backgroundColor: groupId ? COLORS.brandPrimary : '#cbd5e1', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12 }}
-              >
-                <Text style={{ color: '#fff', fontWeight: '800' }}>Copy</Text>
-              </TouchableOpacity>
-            </View>
+            
           </View>
 
           <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16 }}>

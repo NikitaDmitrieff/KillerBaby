@@ -9,6 +9,114 @@ import { COLORS } from '../../../theme/colors';
 
 type PlayerItem = { id: string; display_name: string; is_active: boolean };
 
+function getInitials(name: string | undefined | null) {
+  const safe = (name ?? '').trim();
+  if (!safe) return '?';
+  const parts = safe.split(/\s+/).filter(Boolean);
+  const initials = parts.map((p) => p[0] || '').join('').slice(0, 2).toUpperCase();
+  return initials || '?';
+}
+
+function Avatar({ name, size = 36 }: { name: string; size?: number }) {
+  const initials = useMemo(() => getInitials(name), [name]);
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 999,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#EEF2FF',
+        borderWidth: 2,
+        borderColor: '#FFFFFF',
+      }}
+    >
+      <Text style={{ fontSize: Math.max(12, Math.floor(size * 0.42)), fontWeight: '800', color: '#3730A3' }}>{initials}</Text>
+    </View>
+  );
+}
+
+function Chip({
+  label,
+  tone = 'neutral',
+  onPress,
+  disabled,
+}: {
+  label: string;
+  tone?: 'neutral' | 'success' | 'danger' | 'brand';
+  onPress?: () => void;
+  disabled?: boolean;
+}) {
+  const bg =
+    tone === 'success'
+      ? '#DCFCE7'
+      : tone === 'danger'
+      ? '#FEE2E2'
+      : tone === 'brand'
+      ? '#EEF2FF'
+      : '#F3F4F6';
+  const fg =
+    tone === 'success' ? '#166534' : tone === 'danger' ? '#991B1B' : tone === 'brand' ? COLORS.brandPrimary : '#111827';
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled}
+      style={{
+        backgroundColor: bg,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 999,
+        borderWidth: tone === 'brand' ? 1 : 0,
+        borderColor: tone === 'brand' ? COLORS.brandPrimary : 'transparent',
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <Text style={{ color: fg, fontWeight: '700' }}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function Segmented({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+}) {
+  return (
+    <View
+      style={{
+        backgroundColor: '#F3F4F6',
+        borderRadius: 999,
+        padding: 4,
+        flexDirection: 'row',
+        gap: 6,
+      }}
+    >
+      {options.map((opt) => {
+        const active = value === opt;
+        return (
+          <TouchableOpacity
+            key={opt}
+            onPress={() => onChange(opt)}
+            style={{
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              borderRadius: 999,
+              backgroundColor: active ? COLORS.brandPrimary : 'transparent',
+            }}
+          >
+            <Text style={{ color: active ? '#FFFFFF' : '#111827', fontWeight: active ? '800' : '600' }}>{opt}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function AdminPlayersScreen() {
   const { id: groupId } = useGroupsStore();
   const router = useRouter();
@@ -16,17 +124,23 @@ export default function AdminPlayersScreen() {
   const [saving, setSaving] = useState(false);
   const [players, setPlayers] = useState<PlayerItem[]>([]);
   const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<'All' | 'Active' | 'Removed'>('All');
   const [gameStatus, setGameStatus] = useState<string | null>(null);
   const [userProfileId, setUserProfileId] = useState<string | null>(null);
   const [checkingIntegrity, setCheckingIntegrity] = useState(false);
   const [ringIsValid, setRingIsValid] = useState<boolean | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [openingChatPlayerId, setOpeningChatPlayerId] = useState<string | null>(null);
+
+  const activeCount = useMemo(() => players.filter((p) => p.is_active).length, [players]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return players;
-    return players.filter((p) => p.display_name.toLowerCase().includes(q));
-  }, [players, query]);
+    let list = players;
+    if (filter === 'Active') list = list.filter((p) => p.is_active);
+    if (filter === 'Removed') list = list.filter((p) => !p.is_active);
+    if (!q) return list;
+    return list.filter((p) => p.display_name.toLowerCase().includes(q));
+  }, [players, query, filter]);
 
   async function loadPlayers() {
     if (!groupId) return;
@@ -54,11 +168,8 @@ export default function AdminPlayersScreen() {
     async function hydrateContext() {
       if (!groupId) return;
       try {
-        // Load current user profile id (assumes profiles.id == auth.user.id)
         const { data: userRes } = await supabase.auth.getUser();
         setUserProfileId(userRes.user?.id ?? null);
-
-        // Load group game status to decide ring operations
         const { data: group, error: gErr } = await supabase
           .from('groups')
           .select('game_status')
@@ -66,8 +177,7 @@ export default function AdminPlayersScreen() {
           .single();
         if (gErr) throw gErr;
         setGameStatus((group as any)?.game_status ?? null);
-      } catch (e: any) {
-        // Non-fatal; UI will still work with conservative behavior
+      } catch {
         setGameStatus(null);
       }
     }
@@ -83,9 +193,7 @@ export default function AdminPlayersScreen() {
       if (gameStatus === 'active') {
         Alert.alert('Added to group only', 'Game is active. New players are added to the group but not inserted into the current ring.');
       }
-      const { error } = await supabase
-        .from('group_players')
-        .insert({ group_id: groupId, display_name });
+      const { error } = await supabase.from('group_players').insert({ group_id: groupId, display_name });
       if (error) throw error;
       setQuery('');
       await loadPlayers();
@@ -100,9 +208,7 @@ export default function AdminPlayersScreen() {
     try {
       setSaving(true);
       if (!active) {
-        // Deactivate / Remove
         if (gameStatus === 'active') {
-          // Rewire the ring first to keep it valid
           if (!userProfileId) {
             throw new Error('Missing moderator profile. Please re-login and try again.');
           } else {
@@ -114,14 +220,12 @@ export default function AdminPlayersScreen() {
             if (rpcErr) throw rpcErr;
           }
         }
-        // Reflect membership state
         const { error: updErr } = await supabase
           .from('group_players')
           .update({ is_active: false, removed_at: new Date().toISOString() })
           .eq('id', playerId);
         if (updErr) throw updErr;
       } else {
-        // Restore
         if (gameStatus === 'active') {
           Alert.alert('Restored to group', 'Player restored to the group. They will not be in the current ring until the next seed.');
         }
@@ -161,7 +265,6 @@ export default function AdminPlayersScreen() {
     if (!groupId) return;
     try {
       setOpeningChatPlayerId(playerId);
-      // Ensure we have the current admin profile id
       let adminProfileId = userProfileId;
       if (!adminProfileId) {
         const { data } = await supabase.auth.getUser();
@@ -171,7 +274,6 @@ export default function AdminPlayersScreen() {
       if (!adminProfileId) {
         throw new Error('Missing admin profile. Please re-login and try again.');
       }
-      // Try to find existing admin conversation with this player
       const { data: existing, error: findErr } = await supabase
         .from('conversations')
         .select('id')
@@ -209,10 +311,18 @@ export default function AdminPlayersScreen() {
     }
   }
 
+  const headerShadow = {
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  };
+
   return (
     <CollapsibleHeader
-      title={"Players"}
-      subtitle={"Statuses and progression"}
+      title={'Players'}
+      subtitle={'Statuses and progression'}
       isRefreshing={refreshing}
       renderRightAccessory={({ collapseProgress }) => (
         <CollapsibleHeaderAccessory collapseProgress={collapseProgress}>
@@ -232,100 +342,170 @@ export default function AdminPlayersScreen() {
               scrollEventThrottle={16}
               data={filtered}
               keyExtractor={(i) => i.id}
-              contentContainerStyle={{ paddingTop: contentInsetTop, paddingHorizontal: 16, paddingBottom: 100 }}
+              contentContainerStyle={{ paddingTop: contentInsetTop, paddingHorizontal: 16, paddingBottom: 120 }}
               refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={onRefresh}
-                  tintColor="#9d0208"
-                  colors={["#9d0208"]}
-                />
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.brandPrimary} colors={[COLORS.brandPrimary]} />
               }
-              ListHeaderComponent={(
-                <View style={{ gap: 10, marginBottom: 12 }}>
-                  <View style={{ backgroundColor: '#eef2ff', borderRadius: 12, padding: 12 }}>
-                    <Text style={{ fontWeight: '700', color: '#111827' }}>Game status: {gameStatus ?? '—'}</Text>
-                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+              ListHeaderComponent={
+                <View style={{ gap: 12, marginBottom: 12 }}>
+                  {/* Stats / Status Row */}
+                  <View
+                    style={{
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: 16,
+                      padding: 14,
+                      borderWidth: 1,
+                      borderColor: '#E5E7EB',
+                      ...headerShadow,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#111827' }}>
+                        {players.length} players • {activeCount} active
+                      </Text>
+                      <Chip
+                        label={`Game: ${gameStatus ?? '—'}`}
+                        tone="brand"
+                        onPress={undefined}
+                      />
+                    </View>
+
+                    <View style={{ marginTop: 10, flexDirection: 'row', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Segmented value={filter} onChange={(v) => setFilter(v as any)} options={['All', 'Active', 'Removed']} />
                       <TouchableOpacity
                         onPress={assertRing}
                         disabled={checkingIntegrity || !groupId}
-                        style={{ backgroundColor: checkingIntegrity ? '#cbd5e1' : COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
+                        style={{
+                          backgroundColor: checkingIntegrity ? '#CBD5E1' : COLORS.brandPrimary,
+                          paddingHorizontal: 14,
+                          paddingVertical: 10,
+                          borderRadius: 12,
+                        }}
                       >
-                        {checkingIntegrity ? (
-                          <ActivityIndicator color="#fff" />
-                        ) : (
-                          <Text style={{ color: '#fff', fontWeight: '700' }}>Check ring</Text>
-                        )}
+                        {checkingIntegrity ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>Check ring</Text>}
                       </TouchableOpacity>
                       {ringIsValid != null && (
-                        <View style={{ backgroundColor: ringIsValid ? '#dcfce7' : '#fee2e2', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 }}>
-                          <Text style={{ color: ringIsValid ? '#166534' : '#991b1b', fontWeight: '700' }}>
-                            {ringIsValid ? 'Ring valid' : 'Ring invalid'}
-                          </Text>
-                        </View>
+                        <Chip label={ringIsValid ? 'Ring valid' : 'Ring invalid'} tone={ringIsValid ? 'success' : 'danger'} />
                       )}
                     </View>
                   </View>
-                  <TextInput
-                    value={query}
-                    onChangeText={setQuery}
-                    placeholder="Add placeholder name"
-                    autoCapitalize="words"
-                    style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}
-                  />
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    <TouchableOpacity
-                      onPress={() => addPlaceholder(query)}
-                      disabled={!query.trim() || saving}
-                      style={{ backgroundColor: query.trim() && !saving ? COLORS.brandPrimary : '#cbd5e1', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
-                    >
-                      {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Add</Text>}
-                    </TouchableOpacity>
+
+                  {/* Search / Add */}
+                  <View
+                    style={{
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: 16,
+                      padding: 12,
+                      borderWidth: 1,
+                      borderColor: '#E5E7EB',
+                      ...headerShadow,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={{ flex: 1 }}>
+                        <TextInput
+                          value={query}
+                          onChangeText={setQuery}
+                          placeholder="Search players or type a new name to add…"
+                          autoCapitalize="words"
+                          style={{
+                            borderWidth: 1,
+                            borderColor: '#E5E7EB',
+                            backgroundColor: '#F9FAFB',
+                            borderRadius: 12,
+                            paddingHorizontal: 12,
+                            paddingVertical: 10,
+                          }}
+                        />
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => addPlaceholder(query)}
+                        disabled={!query.trim() || saving}
+                        style={{
+                          backgroundColor: query.trim() && !saving ? COLORS.brandPrimary : '#CBD5E1',
+                          paddingHorizontal: 14,
+                          paddingVertical: 12,
+                          borderRadius: 12,
+                        }}
+                      >
+                        {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>Add</Text>}
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
-              )}
+              }
               renderItem={({ item }) => (
-                <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 12, marginBottom: 10, minHeight: 80, justifyContent: 'center' }}>
+                <View
+                  style={{
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 16,
+                    padding: 14,
+                    marginBottom: 12,
+                    borderWidth: 1,
+                    borderColor: '#E5E7EB',
+                    shadowColor: '#000',
+                    shadowOpacity: 0.04,
+                    shadowRadius: 8,
+                    shadowOffset: { width: 0, height: 4 },
+                    elevation: 1,
+                  }}
+                >
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Text style={{ fontWeight: '800' }}>{item.display_name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                      <Avatar name={item.display_name} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontWeight: '800', color: '#111827' }} numberOfLines={1}>
+                          {item.display_name}
+                        </Text>
+                        <View style={{ marginTop: 4, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                          <Chip label={item.is_active ? 'Active' : 'Removed'} tone={item.is_active ? 'success' : 'danger'} />
+                        </View>
+                      </View>
+                    </View>
+
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       {item.is_active ? (
                         <TouchableOpacity
                           onPress={() => setActive(item.id, false)}
-                          style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
+                          style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 }}
                         >
-                          <Text style={{ color: '#fff', fontWeight: '700' }}>Remove</Text>
+                          <Text style={{ color: '#fff', fontWeight: '800' }}>Remove</Text>
                         </TouchableOpacity>
                       ) : (
                         <TouchableOpacity
                           onPress={() => setActive(item.id, true)}
-                          style={{ backgroundColor: '#16a34a', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
+                          style={{ backgroundColor: '#16A34A', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 }}
                         >
-                          <Text style={{ color: '#fff', fontWeight: '700' }}>Restore</Text>
+                          <Text style={{ color: '#fff', fontWeight: '800' }}>Restore</Text>
                         </TouchableOpacity>
                       )}
                       <TouchableOpacity
                         onPress={() => openOrCreateAdminConversation(item.id)}
                         disabled={openingChatPlayerId === item.id}
                         style={{
-                          borderWidth: 1,
+                          borderWidth: 1.5,
                           borderColor: COLORS.brandPrimary,
-                          backgroundColor: '#ffffff',
+                          backgroundColor: '#FFFFFF',
                           paddingHorizontal: 12,
-                          paddingVertical: 8,
-                          borderRadius: 8,
+                          paddingVertical: 10,
+                          borderRadius: 12,
                           opacity: openingChatPlayerId === item.id ? 0.6 : 1,
                         }}
                       >
-                        <Text style={{ color: COLORS.brandPrimary, fontWeight: '700' }}>Message</Text>
+                        <Text style={{ color: COLORS.brandPrimary, fontWeight: '800' }}>Message</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
-                  <View style={{ marginTop: 4 }}>
-                    <Text style={{ color: '#6b7280' }}>Status: {item.is_active ? 'Active' : 'Removed'}</Text>
-                  </View>
                 </View>
               )}
+              ListEmptyComponent={
+                <View style={{ paddingVertical: 40, alignItems: 'center', gap: 8 }}>
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: '#111827' }}>No players yet</Text>
+                  <Text style={{ color: '#6B7280', textAlign: 'center' }}>
+                    Add a player above to kick things off.
+                  </Text>
+                </View>
+              }
             />
           )}
         </View>
@@ -333,5 +513,3 @@ export default function AdminPlayersScreen() {
     />
   );
 }
-
-
