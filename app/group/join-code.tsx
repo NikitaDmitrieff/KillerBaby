@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { COLORS } from '../../theme/colors';
 import { useGroupsStore } from '../../state/groups';
 
 function isLikelyUuid(input: string) {
@@ -73,7 +74,7 @@ export default function GroupJoinCodeScreen() {
               disabled={!canSubmit}
               onPress={onSubmit}
               style={{
-                backgroundColor: canSubmit ? '#03045e' : '#cbd5e1',
+                backgroundColor: canSubmit ? COLORS.brandPrimary : '#cbd5e1',
                 paddingHorizontal: 16,
                 paddingVertical: 14,
                 borderRadius: 12,

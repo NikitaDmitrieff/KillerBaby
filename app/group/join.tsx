@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, SafeAreaView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useGroupsStore } from '../../state/groups';
 import { supabase } from '../../lib/supabase';
+import { COLORS } from '../../theme/colors';
 import { useRouter } from 'expo-router';
 
 type PlayerRow = { id: string; display_name: string; owner_user_id: string | null };
@@ -18,7 +19,7 @@ export default function JoinGroupAsPlayerScreen() {
   // If player already selected for this group, skip this screen
   useEffect(() => {
     if (playerId) {
-      router.replace('/(tabs)/home');
+      router.replace('/group');
     }
   }, [playerId, router]);
 
@@ -129,7 +130,7 @@ export default function JoinGroupAsPlayerScreen() {
           }
         }
       } catch {}
-      router.replace('/(tabs)/home');
+      router.replace('/group');
     } catch (e: any) {
       Alert.alert('Join failed', e?.message ?? 'Could not join group');
     } finally {
@@ -154,7 +155,7 @@ export default function JoinGroupAsPlayerScreen() {
           <TouchableOpacity
             disabled={!query.trim() || submitting}
             onPress={() => handleJoinWithName(query.trim())}
-            style={{ backgroundColor: query.trim() && !submitting ? '#111827' : '#cbd5e1', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 }}
+            style={{ backgroundColor: query.trim() && !submitting ? COLORS.brandPrimary : '#cbd5e1', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 }}
           >
             <Text style={{ color: '#fff', fontWeight: '700' }}>Use this</Text>
           </TouchableOpacity>

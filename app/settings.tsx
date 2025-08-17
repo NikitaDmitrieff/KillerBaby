@@ -198,7 +198,7 @@ export default function SettingsScreen() {
 
             <View style={{ height: 1, backgroundColor: '#e5e7eb', marginVertical: 8 }} />
             <Text style={{ fontWeight: '800', fontSize: 20 }}>Security</Text>
-            <TouchableOpacity onPress={() => router.push('/secure-account')} style={{ backgroundColor: '#111827', padding: 16, borderRadius: 14, alignItems: 'center' }}>
+            <TouchableOpacity onPress={() => router.push('/secure-account')} style={{ backgroundColor: COLORS.brandPrimary, padding: 16, borderRadius: 14, alignItems: 'center' }}>
               <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Secure my account</Text>
             </TouchableOpacity>
 

@@ -1,5 +1,5 @@
 import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../../components/CollapsibleHeader';
-import { View, Text, ActivityIndicator, FlatList, RefreshControl, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
 import RoleToggle from '../../role-toggle';
@@ -7,6 +7,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../../../lib/supabase';
 import { useGroupsStore } from '../../../../state/groups';
 import { COLORS } from '../../../../theme/colors';
+import ConversationThread from '../../../../components/ConversationThread';
 
 export default function AdminConversationScreen() {
   const router = useRouter();
@@ -21,6 +22,7 @@ export default function AdminConversationScreen() {
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [playerName, setPlayerName] = useState<string>('');
+  const [profileId, setProfileId] = useState<string | null>(null);
 
   const canLoad = useMemo(() => Boolean(groupId && conversationId), [groupId, conversationId]);
 
@@ -64,6 +66,15 @@ export default function AdminConversationScreen() {
   useEffect(() => {
     loadThread();
   }, [conversationId, groupId]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        setProfileId(data?.user?.id ?? null);
+      } catch {}
+    })();
+  }, []);
 
   // Mark messages as read for the admin when viewing
   useEffect(() => {
@@ -162,45 +173,18 @@ export default function AdminConversationScreen() {
               <Text style={{ marginTop: 8, color: '#6b7280' }}>Loading…</Text>
             </View>
           ) : (
-            <FlatList
-              ref={scrollRef as any}
+            <ConversationThread
+              messages={messages}
+              body={body}
+              onChangeBody={setBody}
+              sending={sending}
+              onSend={handleSend}
+              contentInsetTop={contentInsetTop}
               onScroll={onScroll}
-              scrollEventThrottle={16}
-              data={messages}
-              keyExtractor={(item) => String(item.id)}
-              contentContainerStyle={{ paddingTop: contentInsetTop + 56, paddingHorizontal: 16, paddingBottom: 100 }}
-              refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#9d0208" colors={["#9d0208"]} />
-              }
-              renderItem={({ item }) => {
-                const isMine = Boolean(item.sender_profile_id);
-                return (
-                  <View style={{ marginVertical: 6, alignItems: isMine ? 'flex-end' : 'flex-start' }}>
-                    <View style={{ maxWidth: '80%', backgroundColor: isMine ? COLORS.brandPrimary : '#f3f4f6', borderRadius: 12, padding: 10 }}>
-                      <Text style={{ color: isMine ? '#fff' : '#111827' }}>{item.body}</Text>
-                      <Text style={{ color: isMine ? '#ffffffaa' : '#6b7280', fontSize: 10, marginTop: 4 }}>{new Date(item.created_at).toLocaleTimeString()}</Text>
-                    </View>
-                  </View>
-                );
-              }}
-              ListFooterComponent={
-                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                  <TextInput
-                    value={body}
-                    onChangeText={setBody}
-                    placeholder="Type a message…"
-                    placeholderTextColor="#9ca3af"
-                    style={{ flex: 1, borderWidth: 1, borderColor: '#d1d5db', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fff' }}
-                  />
-                  <TouchableOpacity
-                    onPress={handleSend}
-                    disabled={sending || !body.trim()}
-                    style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center', opacity: sending || !body.trim() ? 0.6 : 1 }}
-                  >
-                    <Text style={{ color: '#fff', fontWeight: '800' }}>Send</Text>
-                  </TouchableOpacity>
-                </View>
-              }
+              scrollRef={scrollRef}
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              isMine={(m: any) => Boolean(m?.sender_profile_id && m.sender_profile_id === profileId)}
             />
           )}
         </View>

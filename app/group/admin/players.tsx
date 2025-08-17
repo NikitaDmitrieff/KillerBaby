@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useGroupsStore } from '../../../state/groups';
 import { useRouter } from 'expo-router';
+import { COLORS } from '../../../theme/colors';
 
 type PlayerItem = { id: string; display_name: string; is_active: boolean };
 
@@ -248,7 +249,7 @@ export default function AdminPlayersScreen() {
                       <TouchableOpacity
                         onPress={assertRing}
                         disabled={checkingIntegrity || !groupId}
-                        style={{ backgroundColor: checkingIntegrity ? '#cbd5e1' : '#111827', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
+                        style={{ backgroundColor: checkingIntegrity ? '#cbd5e1' : COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
                       >
                         {checkingIntegrity ? (
                           <ActivityIndicator color="#fff" />
@@ -276,7 +277,7 @@ export default function AdminPlayersScreen() {
                     <TouchableOpacity
                       onPress={() => addPlaceholder(query)}
                       disabled={!query.trim() || saving}
-                      style={{ backgroundColor: query.trim() && !saving ? '#111827' : '#cbd5e1', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
+                      style={{ backgroundColor: query.trim() && !saving ? COLORS.brandPrimary : '#cbd5e1', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
                     >
                       {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Add</Text>}
                     </TouchableOpacity>
@@ -284,32 +285,44 @@ export default function AdminPlayersScreen() {
                 </View>
               )}
               renderItem={({ item }) => (
-                <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16, marginBottom: 12 }}>
-                  <Text style={{ fontWeight: '800' }}>{item.display_name}</Text>
-                  <Text style={{ color: '#6b7280', marginTop: 4 }}>Status: {item.is_active ? 'Active' : 'Removed'}</Text>
-                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                    {item.is_active ? (
+                <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 12, marginBottom: 10, minHeight: 80, justifyContent: 'center' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={{ fontWeight: '800' }}>{item.display_name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {item.is_active ? (
+                        <TouchableOpacity
+                          onPress={() => setActive(item.id, false)}
+                          style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
+                        >
+                          <Text style={{ color: '#fff', fontWeight: '700' }}>Remove</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          onPress={() => setActive(item.id, true)}
+                          style={{ backgroundColor: '#16a34a', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
+                        >
+                          <Text style={{ color: '#fff', fontWeight: '700' }}>Restore</Text>
+                        </TouchableOpacity>
+                      )}
                       <TouchableOpacity
-                        onPress={() => setActive(item.id, false)}
-                        style={{ backgroundColor: '#9d0208', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
+                        onPress={() => openOrCreateAdminConversation(item.id)}
+                        disabled={openingChatPlayerId === item.id}
+                        style={{
+                          borderWidth: 1,
+                          borderColor: COLORS.brandPrimary,
+                          backgroundColor: '#ffffff',
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 8,
+                          opacity: openingChatPlayerId === item.id ? 0.6 : 1,
+                        }}
                       >
-                        <Text style={{ color: '#fff', fontWeight: '700' }}>Remove</Text>
+                        <Text style={{ color: COLORS.brandPrimary, fontWeight: '700' }}>Message</Text>
                       </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        onPress={() => setActive(item.id, true)}
-                        style={{ backgroundColor: '#16a34a', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
-                      >
-                        <Text style={{ color: '#fff', fontWeight: '700' }}>Restore</Text>
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity
-                      onPress={() => openOrCreateAdminConversation(item.id)}
-                      disabled={openingChatPlayerId === item.id}
-                      style={{ backgroundColor: '#111827', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, opacity: openingChatPlayerId === item.id ? 0.6 : 1 }}
-                    >
-                      <Text style={{ color: '#fff', fontWeight: '700' }}>Message</Text>
-                    </TouchableOpacity>
+                    </View>
+                  </View>
+                  <View style={{ marginTop: 4 }}>
+                    <Text style={{ color: '#6b7280' }}>Status: {item.is_active ? 'Active' : 'Removed'}</Text>
                   </View>
                 </View>
               )}

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useGroupsStore } from '../../../../../state/groups';
 import { supabase } from '../../../../../lib/supabase';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { COLORS } from '../../../../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function getInitials(name: string | undefined | null) {
@@ -43,6 +44,10 @@ export default function DareDetailsScreen() {
   const [assassinName, setAssassinName] = useState('');
   const [targetName, setTargetName] = useState('');
   const [dareText, setDareText] = useState('');
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState('');
+  const [templates, setTemplates] = useState<Array<{ id: number; text: string; difficulty?: 'EASY' | 'INTERMEDIATE' | 'HARD'; tags?: string[] }>>([]);
+  const [difficultyFilter, setDifficultyFilter] = useState<'ALL' | 'EASY' | 'INTERMEDIATE' | 'HARD'>('ALL');
 
   useEffect(() => {
     if (!groupId || !assassinId) return;
@@ -77,6 +82,39 @@ export default function DareDetailsScreen() {
     })();
   }, [groupId, assassinId]);
 
+  useEffect(() => {
+    if (!groupId) return;
+    (async () => {
+      try {
+        setTemplatesLoading(true);
+        const { data, error } = await supabase
+          .from('dare_templates')
+          .select('id, text, difficulty, tags')
+          .eq('group_id', groupId)
+          .eq('is_active', true);
+        if (error) throw error;
+        const difficultyOrder: Record<string, number> = { EASY: 0, INTERMEDIATE: 1, HARD: 2 };
+        const rows = (data as any[] | null) ?? [];
+        rows.sort((a, b) => {
+          const da = difficultyOrder[(a?.difficulty as string) || 'EASY'] ?? 0;
+          const db = difficultyOrder[(b?.difficulty as string) || 'EASY'] ?? 0;
+          if (da !== db) return da - db;
+          return (a?.text || '').localeCompare(b?.text || '');
+        });
+        setTemplates(rows.map((r) => ({
+          id: r.id as number,
+          text: (r.text as string) || '',
+          difficulty: (r.difficulty as any) || 'EASY',
+          tags: (r.tags as string[] | null) || [],
+        })));
+      } catch (e: any) {
+        // Non-fatal; browsing is optional
+      } finally {
+        setTemplatesLoading(false);
+      }
+    })();
+  }, [groupId]);
+
   async function save() {
     if (!groupId || !assassinId) return;
     try {
@@ -98,24 +136,22 @@ export default function DareDetailsScreen() {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
       <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
-        <View
-          style={{
-            paddingTop: insets.top,
-            paddingHorizontal: 16,
-            paddingBottom: 12,
-            borderBottomWidth: 1,
-            borderColor: '#e5e7eb',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <Text numberOfLines={1} style={{ fontSize: 20, fontWeight: '800', color: '#111827', flex: 1, paddingRight: 16 }}>
-            {assassinName ? `${assassinName}'s Dare` : 'Dare'}
-          </Text>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-            <Text style={{ fontSize: 20, color: '#111827' }}>✕</Text>
-          </TouchableOpacity>
+        <View style={{ paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#ffffff' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text numberOfLines={1} style={{ fontSize: 22, fontWeight: '800', color: '#111827', flex: 1, paddingRight: 16 }}>
+              Edit Dare
+            </Text>
+            <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+              <Text style={{ fontSize: 20, color: '#111827' }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Avatar name={assassinName} size={36} />
+            <Text style={{ fontWeight: '800', color: '#111827' }}>{assassinName || '—'}</Text>
+            <Text style={{ color: '#6b7280' }}>→</Text>
+            <Avatar name={targetName} size={36} />
+            <Text style={{ fontWeight: '800', color: '#111827' }}>{targetName || '—'}</Text>
+          </View>
         </View>
 
         {loading ? (
@@ -124,19 +160,9 @@ export default function DareDetailsScreen() {
           </View>
         ) : (
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-            <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16, marginBottom: 12 }}>
-              <Text style={{ fontWeight: '800', marginBottom: 10 }}>Participants</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Avatar name={assassinName} />
-                <Text style={{ fontWeight: '700' }}>{assassinName}</Text>
-                <Text>→</Text>
-                <Avatar name={targetName} />
-                <Text style={{ fontWeight: '700' }}>{targetName}</Text>
-              </View>
-            </View>
-
             <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 16, marginBottom: 12 }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Dare text</Text>
+              <Text style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Tip: pick a template below and tweak the text.</Text>
               <TextInput
                 value={dareText}
                 onChangeText={setDareText}
@@ -149,10 +175,76 @@ export default function DareDetailsScreen() {
                 <TouchableOpacity onPress={() => router.back()} style={{ backgroundColor: '#e5e7eb', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10 }}>
                   <Text style={{ color: '#111827', fontWeight: '700' }}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={save} disabled={saving} style={{ backgroundColor: '#059669', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10, opacity: saving ? 0.8 : 1 }}>
+                <TouchableOpacity onPress={save} disabled={saving} style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10, opacity: saving ? 0.8 : 1 }}>
                   {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#ffffff', fontWeight: '800' }}>Save</Text>}
                 </TouchableOpacity>
               </View>
+            </View>
+
+            <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 16 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Browse templates</Text>
+              <TextInput
+                value={templateSearch}
+                onChangeText={setTemplateSearch}
+                placeholder="Search templates"
+                style={{ backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 10, marginTop: 10 }}
+              />
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                {(["ALL", "EASY", "INTERMEDIATE", "HARD"] as const).map((opt) => {
+                  const isSelected = difficultyFilter === opt;
+                  const label = opt === 'ALL' ? 'All' : opt === 'EASY' ? 'Easy' : opt === 'INTERMEDIATE' ? 'Intermediate' : 'Hard';
+                  return (
+                    <TouchableOpacity
+                      key={opt}
+                      onPress={() => setDifficultyFilter(opt)}
+                      style={{ backgroundColor: isSelected ? COLORS.brandPrimary : '#f3f4f6', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9999 }}
+                    >
+                      <Text style={{ color: isSelected ? '#fff' : '#111827', fontWeight: '700' }}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {templatesLoading ? (
+                <View style={{ paddingVertical: 12 }}>
+                  <ActivityIndicator />
+                </View>
+              ) : (
+                <View style={{ marginTop: 8 }}>
+                  {templates
+                    .filter((t) => {
+                      const q = templateSearch.trim().toLowerCase();
+                      const matchesSearch = !q || (
+                        t.text.toLowerCase().includes(q) ||
+                        (t.tags || []).some((tag) => tag.toLowerCase().includes(q)) ||
+                        (t.difficulty || 'EASY').toLowerCase().includes(q)
+                      );
+                      const matchesDiff = difficultyFilter === 'ALL' || ((t.difficulty || 'EASY') === difficultyFilter);
+                      return matchesSearch && matchesDiff;
+                    })
+                    .slice(0, 60)
+                    .map((t) => (
+                      <View key={t.id} style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12, marginTop: 8 }}>
+                        <Text style={{ color: '#111827' }}>{t.text}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                          {!!t.difficulty && (
+                            <View style={{ backgroundColor: '#f3f4f6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }}>
+                              <Text style={{ fontSize: 11, fontWeight: '800', color: '#374151' }}>{t.difficulty}</Text>
+                            </View>
+                          )}
+                          {(t.tags || []).map((tag) => (
+                            <View key={tag} style={{ backgroundColor: '#f9fafb', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: '#e5e7eb' }}>
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: '#4b5563' }}>{tag}</Text>
+                            </View>
+                          ))}
+                          <View style={{ flex: 1 }} />
+                          <TouchableOpacity onPress={() => setDareText(t.text)} style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 }}>
+                            <Text style={{ color: '#ffffff', fontWeight: '800' }}>Use</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                </View>
+              )}
             </View>
           </ScrollView>
         )}

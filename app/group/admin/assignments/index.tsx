@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useGroupsStore } from '../../../../state/groups';
 import { supabase } from '../../../../lib/supabase';
 import { useRouter } from 'expo-router';
+import { COLORS } from '../../../../theme/colors';
 import Svg, { Circle as SvgCircle, Line as SvgLine, Path as SvgPath, Text as SvgText } from 'react-native-svg';
 
 type EdgeRow = { assassin_player_id: string; assassin_name: string; target_player_id: string; target_name: string; dare_text: string };
@@ -210,7 +211,6 @@ export default function AdminAssignmentsScreen() {
   const [dareDraftByAssassin, setDareDraftByAssassin] = useState<Record<string, string>>({});
   const [savingRing, setSavingRing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [showRing, setShowRing] = useState(false);
   const [addedAssassinIds, setAddedAssassinIds] = useState<string[]>([]);
 
   async function loadRing() {
@@ -288,7 +288,34 @@ export default function AdminAssignmentsScreen() {
       }
       const assassins = ids;
       const targets = ids.slice(1).concat(ids.slice(0, 1));
-      const dares = ids.map(() => 'Be creative!');
+      // Fetch dare templates for this group
+      const { data: tmplRows, error: tmplErr } = await supabase
+        .from('dare_templates')
+        .select('text')
+        .eq('group_id', groupId)
+        .eq('is_active', true);
+      if (tmplErr) throw tmplErr;
+      const templates: string[] = ((tmplRows as any[]) ?? [])
+        .map((r) => (r?.text as string) || '')
+        .filter((t) => !!t && t.trim().length > 0);
+      // Map player id -> display name
+      const nameById = new Map<string, string>(((players as any[]) ?? []).map((p: any) => [p.player_id as string, (p.display_name as string) || '—']));
+      // Helper to personalize a template to the target
+      function personalize(templateText: string, targetId: string): string {
+        const name = nameById.get(targetId) || 'your target';
+        try {
+          return templateText.replace(/\byour target\b/gi, name);
+        } catch {
+          return templateText;
+        }
+      }
+      // Generate dares: random template per target, personalized
+      const dares = assassins.map((assassinId: string, i: number) => {
+        const targetId = targets[i];
+        if (templates.length === 0) return 'Be creative!';
+        const pick = templates[Math.floor(Math.random() * templates.length)];
+        return personalize(pick, targetId);
+      });
       const { error } = await supabase.rpc('reseed_active_ring', {
         p_group_id: groupId,
         p_assassins: assassins,
@@ -314,9 +341,7 @@ export default function AdminAssignmentsScreen() {
     setRingEditMode((v) => !v);
   }
 
-  function toggleRingVisualization() {
-    setShowRing((v) => !v);
-  }
+  
 
   function setTargetForAssassin(assassinId: string, targetId: string) {
     setMappingByAssassin((prev) => ({ ...prev, [assassinId]: targetId }));
@@ -455,67 +480,69 @@ export default function AdminAssignmentsScreen() {
                 />
               }
               ListHeaderComponent={(
-                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-                  <TouchableOpacity
-                    onPress={handleSeed}
-                    disabled={seeding}
-                    style={{ backgroundColor: '#9d0208', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
-                  >
-                    {seeding ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Seed ring</Text>}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={toggleRingEditMode}
-                    style={{ backgroundColor: ringEditMode ? '#1d4ed8' : '#e5e7eb', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
-                  >
-                    <Text style={{ color: ringEditMode ? '#fff' : '#111827', fontWeight: '700' }}>{ringEditMode ? 'Editing ring' : 'Edit ring'}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={toggleRingVisualization}
-                    style={{ backgroundColor: showRing ? '#9d0208' : '#e5e7eb', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
-                  >
-                    <Text style={{ color: showRing ? '#fff' : '#111827', fontWeight: '700' }}>{showRing ? 'Hide diagram' : 'Visualize ring'}</Text>
-                  </TouchableOpacity>
-                  {ringEditMode && (
+                <View style={{ gap: 12, marginBottom: 12 }}>
+                  <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Ring diagram</Text>
+                    <View style={{ marginTop: 8 }}>
+                      <RingVisualizer edges={edges} />
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
                     <TouchableOpacity
-                      onPress={saveRingChanges}
-                      disabled={savingRing}
-                      style={{ backgroundColor: '#059669', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
+                      onPress={handleSeed}
+                      disabled={seeding}
+                      style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
                     >
-                      {savingRing ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Save ring</Text>}
+                      {seeding ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Seed ring</Text>}
                     </TouchableOpacity>
-                  )}
-                  {ringEditMode && (
-                    <View style={{ width: '100%' }}>
-                      <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Add players to ring</Text>
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
-                          {deadPlayers
-                            .filter((p) => !edges.some((e) => e.assassin_player_id === p.player_id) && !addedAssassinIds.includes(p.player_id))
-                            .map((p) => (
-                              <TouchableOpacity
-                                key={`add-${p.player_id}`}
-                                onPress={() => toggleAddParticipant(p.player_id)}
-                                style={{ backgroundColor: '#f3f4f6', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9999 }}
-                              >
-                                <Text style={{ color: '#111827', fontWeight: '600' }}>{p.display_name}</Text>
-                              </TouchableOpacity>
-                            ))}
-                          {addedAssassinIds.map((id) => {
-                            const name = getName(id);
-                            return (
-                              <TouchableOpacity
-                                key={`added-${id}`}
-                                onPress={() => toggleAddParticipant(id)}
-                                style={{ backgroundColor: '#1d4ed8', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9999 }}
-                              >
-                                <Text style={{ color: '#fff', fontWeight: '700' }}>Added: {name} ✕</Text>
-                              </TouchableOpacity>
-                            );
-                          })}
+                    <TouchableOpacity
+                      onPress={toggleRingEditMode}
+                      style={{ backgroundColor: ringEditMode ? COLORS.brandPrimary : '#e5e7eb', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
+                    >
+                      <Text style={{ color: ringEditMode ? '#fff' : '#111827', fontWeight: '700' }}>{ringEditMode ? 'Editing ring' : 'Edit ring'}</Text>
+                    </TouchableOpacity>
+                    {ringEditMode && (
+                      <TouchableOpacity
+                        onPress={saveRingChanges}
+                        disabled={savingRing}
+                        style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
+                      >
+                        {savingRing ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Save ring</Text>}
+                      </TouchableOpacity>
+                    )}
+                    {ringEditMode && (
+                      <View style={{ width: '100%' }}>
+                        <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Add players to ring</Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                            {deadPlayers
+                              .filter((p) => !edges.some((e) => e.assassin_player_id === p.player_id) && !addedAssassinIds.includes(p.player_id))
+                              .map((p) => (
+                                <TouchableOpacity
+                                  key={`add-${p.player_id}`}
+                                  onPress={() => toggleAddParticipant(p.player_id)}
+                                  style={{ backgroundColor: '#f3f4f6', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9999 }}
+                                >
+                                  <Text style={{ color: '#111827', fontWeight: '600' }}>{p.display_name}</Text>
+                                </TouchableOpacity>
+                              ))}
+                            {addedAssassinIds.map((id) => {
+                              const name = getName(id);
+                              return (
+                                <TouchableOpacity
+                                  key={`added-${id}`}
+                                  onPress={() => toggleAddParticipant(id)}
+                                  style={{ backgroundColor: '#1d4ed8', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9999 }}
+                                >
+                                  <Text style={{ color: '#fff', fontWeight: '700' }}>Added: {name} ✕</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
                         </View>
                       </View>
-                    </View>
-                  )}
+                    )}
+                  </View>
                 </View>
               )}
               renderItem={({ item }) => (
@@ -599,14 +626,7 @@ export default function AdminAssignmentsScreen() {
                       })}
                     </View>
                   )}
-                  {showRing ? (
-                    <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, marginTop: 4 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Ring diagram</Text>
-                      <View style={{ marginTop: 8 }}>
-                        <RingVisualizer edges={edges} />
-                      </View>
-                    </View>
-                  ) : null}
+                  
                 </View>
               )}
             />

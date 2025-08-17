@@ -110,6 +110,44 @@ export default function PlayerAssignmentScreen() {
     return `${first}${last}`.toUpperCase();
   }
 
+  async function openTargetConversation() {
+    if (!groupId || !playerId || !targetPlayerId) {
+      router.navigate('/group/player/conversation');
+      return;
+    }
+    try {
+      const { data: existing, error: findErr } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('group_id', groupId)
+        .eq('conversation_kind', 'PLAYER_TARGET')
+        .eq('player_id', playerId)
+        .eq('target_player_id', targetPlayerId)
+        .limit(1);
+      if (findErr) throw findErr;
+      let convoId: number | null = (existing && existing[0]?.id) ? existing[0].id : null;
+
+      if (!convoId) {
+        const { data: created, error: createErr } = await supabase
+          .from('conversations')
+          .insert([{ group_id: groupId, conversation_kind: 'PLAYER_TARGET', player_id: playerId, target_player_id: targetPlayerId }])
+          .select('id')
+          .single();
+        if (createErr) throw createErr;
+        convoId = created?.id ?? null;
+      }
+
+      if (convoId) {
+        router.push(`/group/player/conversation/${convoId}`);
+      } else {
+        router.navigate('/group/player/conversation');
+      }
+    } catch (e: any) {
+      Alert.alert('Unable to open chat', e?.message ?? 'Please try again later');
+      router.navigate('/group/player/conversation');
+    }
+  }
+
   return (
     <CollapsibleHeader
       title={"Your Assignment"}
@@ -164,7 +202,7 @@ export default function PlayerAssignmentScreen() {
 
                   <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
                     <TouchableOpacity
-                      onPress={() => router.navigate('/group/player/conversation')}
+                      onPress={openTargetConversation}
                       style={styles.secondaryButton}
                     >
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

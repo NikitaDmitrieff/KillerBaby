@@ -36,36 +36,108 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
       setLoading(true);
       let convos: any[] = [];
       if (mode === 'player') {
-        // Fetch admin-player thread for this player
-        const adminQuery = supabase
-          .from('conversations')
-          .select('*')
-          .eq('group_id', groupId as string)
-          .eq('conversation_kind', 'PLAYER_ADMIN')
-          .eq('player_id', playerId as string)
-          .limit(100);
-        // Fetch hunter-target threads where this player is hunter
-        const hunterQuery = supabase
-          .from('conversations')
-          .select('*')
-          .eq('group_id', groupId as string)
-          .eq('conversation_kind', 'PLAYER_TARGET')
-          .eq('player_id', playerId as string)
-          .limit(200);
-        // Fetch hunter-target threads where this player is target (show as "Hunter")
-        const targetQuery = supabase
-          .from('conversations')
-          .select('*')
-          .eq('group_id', groupId as string)
-          .eq('conversation_kind', 'PLAYER_TARGET')
-          .eq('target_player_id', playerId as string)
-          .limit(200);
+        // Ensure the three default conversations exist: Admin, Target, Hunter
+        // 1) Resolve admin profile
+        const groupPromise = supabase.from('groups').select('created_by').eq('id', groupId as string).single();
+        // 2) Resolve current target via RPC
+        const targetPromise = playerId
+          ? supabase.rpc('get_current_target', { p_group_id: groupId as string, p_assassin_player_id: playerId as string })
+          : Promise.resolve({ data: null });
+        // 3) Resolve current hunter (fallback to assignments if RPC unavailable)
+        const hunterRpcPromise = playerId
+          ? supabase.rpc('get_current_hunter', { p_group_id: groupId as string, p_target_player_id: playerId as string })
+          : Promise.resolve({ data: null });
 
-        const [adminRes, hunterRes, targetRes] = await Promise.all([adminQuery, hunterQuery, targetQuery]);
-        if (adminRes.error) throw adminRes.error;
-        if (hunterRes.error) throw hunterRes.error;
-        if (targetRes.error) throw targetRes.error;
-        convos = ([...(adminRes.data || []), ...(hunterRes.data || []), ...(targetRes.data || [])] as any[])
+        const [groupRes, targetRes, hunterRpcRes] = await Promise.all([groupPromise, targetPromise, hunterRpcPromise]);
+        const adminProfileId = (groupRes as any)?.data?.created_by ?? null;
+
+        const targetRow = Array.isArray((targetRes as any)?.data) ? (targetRes as any)?.data?.[0] : null;
+        const targetPlayerId = targetRow?.target_player_id ?? null;
+
+        let hunterPlayerId: string | null = null;
+        const hunterRow = Array.isArray((hunterRpcRes as any)?.data) ? (hunterRpcRes as any)?.data?.[0] : null;
+        hunterPlayerId = hunterRow?.hunter_player_id ?? hunterRow?.assassin_player_id ?? null;
+        if (!hunterPlayerId && groupId && playerId) {
+          // Fallback: look up active assignment where this player is target
+          const { data: assignRow } = await supabase
+            .from('assignments')
+            .select('assassin_player_id, closed_at')
+            .eq('group_id', groupId as string)
+            .eq('target_player_id', playerId as string)
+            .is('closed_at', null)
+            .limit(1);
+          hunterPlayerId = Array.isArray(assignRow) ? (assignRow[0]?.assassin_player_id as string) : null;
+        }
+
+        // Helper to find-or-create a conversation
+        async function ensureConversation(where: Record<string, any>, insertRow: Record<string, any>) {
+          const query = supabase.from('conversations').select('*').eq('group_id', groupId as string);
+          for (const [k, v] of Object.entries(where)) (query as any).eq(k, v);
+          const { data: existing, error: findErr } = await query.limit(1);
+          if (findErr) throw findErr;
+          if (Array.isArray(existing) && existing[0]) return existing[0];
+          const { data: created, error: createErr } = await supabase
+            .from('conversations')
+            .insert([{ ...insertRow }])
+            .select('*')
+            .single();
+          if (createErr) throw createErr;
+          return created;
+        }
+
+        const results: any[] = [];
+        // Admin convo
+        if (playerId) {
+          const adminConvo = await ensureConversation(
+            { conversation_kind: 'PLAYER_ADMIN', player_id: playerId },
+            { group_id: groupId, conversation_kind: 'PLAYER_ADMIN', player_id: playerId, admin_profile_id: adminProfileId }
+          );
+          results.push(adminConvo);
+        }
+        // Target convo (you → your target)
+        if (playerId && targetPlayerId) {
+          const targetConvo = await ensureConversation(
+            { conversation_kind: 'PLAYER_TARGET', player_id: playerId, target_player_id: targetPlayerId },
+            { group_id: groupId, conversation_kind: 'PLAYER_TARGET', player_id: playerId, target_player_id: targetPlayerId }
+          );
+          results.push(targetConvo);
+        }
+        // Hunter convo (your hunter → you)
+        if (hunterPlayerId && playerId) {
+          const hunterConvo = await ensureConversation(
+            { conversation_kind: 'PLAYER_TARGET', player_id: hunterPlayerId, target_player_id: playerId },
+            { group_id: groupId, conversation_kind: 'PLAYER_TARGET', player_id: hunterPlayerId, target_player_id: playerId }
+          );
+          results.push(hunterConvo);
+        }
+
+        // Add placeholders if needed so players always see 3 conversations
+        const haveTargetConvo = results.some((c) => c.conversation_kind === 'PLAYER_TARGET' && c.player_id === playerId && c.target_player_id);
+        const haveHunterConvo = results.some((c) => c.conversation_kind === 'PLAYER_TARGET' && c.target_player_id === playerId);
+
+        if (!haveTargetConvo) {
+          results.push({
+            id: 'placeholder-target',
+            conversation_kind: 'PLAYER_TARGET',
+            player_id: playerId,
+            target_player_id: null,
+            created_at: new Date().toISOString(),
+            is_placeholder: true,
+          });
+        }
+        if (!haveHunterConvo) {
+          results.push({
+            id: 'placeholder-hunter',
+            conversation_kind: 'PLAYER_TARGET',
+            player_id: null,
+            target_player_id: playerId,
+            created_at: new Date().toISOString(),
+            is_placeholder: true,
+          });
+        }
+
+        convos = results
+          .filter(Boolean)
           .sort((a, b) => new Date(b.last_message_at || b.created_at).getTime() - new Date(a.last_message_at || a.created_at).getTime());
         setConversations(convos);
       } else {
@@ -106,7 +178,9 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
       }
 
       // Load unread counts per conversation
-      const convIds = convos.map((c: any) => c.id);
+      const convIds = convos
+        .map((c: any) => c.id)
+        .filter((id: any) => typeof id === 'number');
       if (convIds.length > 0) {
         if (mode === 'player' && playerId) {
           const { data: unreadRows } = await supabase
@@ -211,6 +285,7 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
               renderItem={({ item }) => {
                 const isAdminConvo = item.conversation_kind === 'PLAYER_ADMIN';
                 const isHunterTarget = item.conversation_kind === 'PLAYER_TARGET';
+                const isPlaceholder = typeof item.id !== 'number';
                 const titleText = mode === 'player'
                   ? (isAdminConvo
                       ? 'Admin'
@@ -220,11 +295,18 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
                   : (nameMap[item.player_id] || 'Unknown player');
                 const when = item.last_message_at ? new Date(item.last_message_at).toLocaleString() : new Date(item.created_at).toLocaleString();
                 const subtitleText = mode === 'player'
-                  ? (isAdminConvo ? 'You and the admin' : 'You and your target')
+                  ? (isAdminConvo ? 'You and the admin' : (item.target_player_id === playerId ? 'Your hunter' : 'You and your target'))
                   : 'Player ↔ Admin';
-                const unreadCount = unreadMap[String(item.id)] || 0;
+                const unreadCount = typeof item.id === 'number' ? (unreadMap[String(item.id)] || 0) : 0;
                 return (
-                  <TouchableOpacity onPress={() => router.push(`${conversationBasePath}/${item.id}`)}>
+                  <TouchableOpacity
+                    disabled={isPlaceholder}
+                    onPress={() => {
+                      if (isPlaceholder) return;
+                      router.push(`${conversationBasePath}/${item.id}`);
+                    }}
+                    style={{ opacity: isPlaceholder ? 0.7 : 1 }}
+                  >
                     <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#e5e7eb', position: 'relative' }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

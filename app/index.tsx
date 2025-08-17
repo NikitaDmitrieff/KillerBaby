@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import CollapsibleHeader, { CollapsibleHeaderRenderParams } from '../components/CollapsibleHeader';
+import { COLORS } from '../theme/colors';
 import { supabase } from '../lib/supabase';
 import { useGroupsStore } from '../state/groups';
 
@@ -131,7 +132,7 @@ export default function SelectGroupScreen() {
                       style={{ flex: 1, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}
                     />
                     <Link href="/group/create" asChild>
-                      <TouchableOpacity style={{ backgroundColor: '#9d0208', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 }}>
+                      <TouchableOpacity style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 }}>
                         <Text style={{ color: '#fff', fontWeight: '700' }}>Create</Text>
                       </TouchableOpacity>
                     </Link>
@@ -187,7 +188,7 @@ export default function SelectGroupScreen() {
               onPress={() => router.push('/settings')}
               accessibilityRole="button"
               accessibilityLabel="Open profile settings"
-              style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: '#9d0208', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 3 }}
+              style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: COLORS.brandPrimary, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 3 }}
             >
               <Ionicons name="person-circle" size={32} color="#fff" />
             </TouchableOpacity>
@@ -199,7 +200,7 @@ export default function SelectGroupScreen() {
               onPress={() => router.push('/group/join-code')}
               accessibilityRole="button"
               accessibilityLabel="Join a group by code"
-              style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: '#9d0208', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 3 }}
+              style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: COLORS.brandPrimary, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 3 }}
             >
               <Ionicons name="people-outline" size={28} color="#fff" />
             </TouchableOpacity>
