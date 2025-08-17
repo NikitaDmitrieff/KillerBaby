@@ -1,9 +1,10 @@
 import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../components/CollapsibleHeader';
-import { View, Text, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, RefreshControl, StyleSheet } from 'react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import RoleToggle from '../role-toggle';
 import { supabase } from '../../../lib/supabase';
 import { useGroupsStore } from '../../../state/groups';
+import { COLORS } from '../../../theme/colors';
 
 type FeedItem = {
   id: string;
@@ -15,11 +16,25 @@ type FeedItem = {
 export default function PlayerFeedScreen() {
   const groupId = useGroupsStore((s) => s.id);
   const groupName = useGroupsStore((s) => s.name);
+  const playerId = useGroupsStore((s) => s.playerId);
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const loadedForGroupRef = useRef<string | null>(null);
   const channelsRef = useRef<{ gp?: ReturnType<typeof supabase.channel>; asg?: ReturnType<typeof supabase.channel> } | null>(null);
+  const groupChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // Player status state
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [isActive, setIsActive] = useState<boolean | null>(null);
+  const [targetName, setTargetName] = useState<string>('—');
+  // Hunter is intentionally hidden from the player
+  const [dareText, setDareText] = useState<string>('—');
+  const [activeCount, setActiveCount] = useState<number | null>(null);
+  const [totalElims, setTotalElims] = useState<number | null>(null);
+  const [myKills, setMyKills] = useState<number | null>(null);
+  const [startedAt, setStartedAt] = useState<string | null>(null);
+  const [endedAt, setEndedAt] = useState<string | null>(null);
 
   const title = useMemo(() => 'Group Feed', []);
   const subtitle = useMemo(() => (groupName ? `${groupName} updates` : 'Eliminations and updates'), [groupName]);
@@ -93,6 +108,8 @@ export default function PlayerFeedScreen() {
       const next = [...joinItems, ...elimItems, ...metaItems].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts));
       setItems(next);
       loadedForGroupRef.current = groupId;
+      setStartedAt(gRow?.started_at ?? null);
+      setEndedAt(gRow?.ended_at ?? null);
     } catch (e) {
       console.warn('[feed] loadInitial error', (e as any)?.message);
     } finally {
@@ -100,11 +117,83 @@ export default function PlayerFeedScreen() {
     }
   }, [groupId]);
 
+  const loadStatus = useCallback(async () => {
+    if (!groupId) return;
+    setStatusLoading(true);
+    try {
+      const tasks: Array<PromiseLike<any>> = [];
+      // Active players list
+      tasks.push(supabase.rpc('get_active_players', { p_group_id: groupId }));
+      // Current target
+      if (playerId) {
+        tasks.push(
+          supabase.rpc('get_current_target', { p_group_id: groupId, p_assassin_player_id: playerId })
+        );
+        // My kills count
+        tasks.push(
+          supabase
+            .from('assignments')
+            .select('id', { count: 'exact', head: true })
+            .eq('group_id', groupId)
+            .eq('assassin_player_id', playerId)
+            .not('closed_at', 'is', null)
+            .neq('reason_closed', 'reseed')
+        );
+      }
+      // Total eliminations
+      tasks.push(
+        supabase
+          .from('assignments')
+          .select('id', { count: 'exact', head: true })
+          .eq('group_id', groupId)
+          .not('closed_at', 'is', null)
+          .neq('reason_closed', 'reseed')
+      );
+
+      const results = await Promise.all(tasks);
+
+      // Unpack
+      const [activePlayersRes, ...rest] = results;
+      const activePlayers = Array.isArray(activePlayersRes?.data) ? activePlayersRes.data : [];
+      setActiveCount(activePlayers.length);
+      if (playerId) {
+        const userIsActive = activePlayers.some((r: any) => (r.id ?? r.player_id) === playerId);
+        setIsActive(userIsActive);
+      } else {
+        setIsActive(null);
+      }
+
+      let restIdx = 0;
+      if (playerId) {
+        const targetRes = rest[restIdx++];
+        const targetRow = Array.isArray(targetRes?.data) ? (targetRes.data[0] as any) : null;
+        if (targetRow) {
+          setTargetName((targetRow.display_name as string) ?? '—');
+          setDareText((targetRow.dare_text as string) ?? '—');
+        } else {
+          setTargetName('—');
+          setDareText('—');
+        }
+
+        const myKillsRes = rest[restIdx++];
+        setMyKills((myKillsRes?.count as number | null) ?? 0);
+      }
+
+      const totalElimsRes = rest[restIdx];
+      setTotalElims((totalElimsRes?.count as number | null) ?? 0);
+    } catch (e) {
+      console.warn('[feed] loadStatus error', (e as any)?.message);
+    } finally {
+      setStatusLoading(false);
+    }
+  }, [groupId, playerId]);
+
   // Initial load when group switches
   useEffect(() => {
     setItems([]);
     if (!groupId) return;
     loadInitial();
+    loadStatus();
   }, [groupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Realtime subscriptions
@@ -114,6 +203,10 @@ export default function PlayerFeedScreen() {
     if (channelsRef.current) {
       channelsRef.current.gp?.unsubscribe();
       channelsRef.current.asg?.unsubscribe();
+    }
+    if (groupChannelRef.current) {
+      groupChannelRef.current.unsubscribe();
+      groupChannelRef.current = null;
     }
 
     const gpChannel = supabase
@@ -147,33 +240,62 @@ export default function PlayerFeedScreen() {
               .maybeSingle();
             if (error || !data) return;
             if ((data as any).reason_closed === 'reseed') return;
+            const extractName = (x: any): string | undefined => {
+              if (!x) return undefined;
+              return Array.isArray(x) ? x[0]?.display_name : x.display_name;
+            };
+            const assassinName = extractName((data as any).assassin) ?? 'Someone';
+            const targetNameRt = extractName((data as any).target) ?? 'someone';
             const it: FeedItem = {
               id: data.id as string,
               ts: data.closed_at as string,
               kind: 'elimination',
-              text: `${data.assassin?.display_name ?? 'Someone'} eliminated ${data.target?.display_name ?? 'someone'} with “${data.dare_text ?? 'a dare'}”`,
+              text: `${assassinName} eliminated ${targetNameRt} with “${(data as any).dare_text ?? 'a dare'}”`,
             };
             mergeItems([it]);
+            // Refresh status-derived counts quickly
+            loadStatus();
           } catch {}
         }
       )
       .subscribe();
 
+    const grpChannel = supabase
+      .channel(`grp-${groupId}-groups`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'groups', filter: `id=eq.${groupId}` },
+        (payload) => {
+          const row: any = payload.new;
+          if (row.started_at) {
+            mergeItems([{ id: `${groupId}-started-${row.started_at}`, ts: row.started_at, kind: 'game_started', text: 'Game started' }]);
+            setStartedAt(row.started_at);
+          }
+          if (row.ended_at) {
+            mergeItems([{ id: `${groupId}-ended-${row.ended_at}`, ts: row.ended_at, kind: 'game_ended', text: 'Game ended' }]);
+            setEndedAt(row.ended_at);
+          }
+        }
+      )
+      .subscribe();
+
     channelsRef.current = { gp: gpChannel, asg: asgChannel };
+    groupChannelRef.current = grpChannel;
     return () => {
       gpChannel.unsubscribe();
       asgChannel.unsubscribe();
+      grpChannel.unsubscribe();
     };
   }, [groupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await loadInitial();
+      await Promise.all([loadInitial(), loadStatus()]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadInitial]);
+  }, [loadInitial, loadStatus]);
 
   return (
     <CollapsibleHeader
@@ -211,6 +333,61 @@ export default function PlayerFeedScreen() {
                   colors={["#9d0208"]}
                 />
               }
+              ListHeaderComponent={
+                <View style={{ marginBottom: 16 }}>
+                  <View
+                    style={[
+                      styles.statusCard,
+                      isActive === false ? styles.statusCardEliminated : styles.statusCardActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.statusTitle,
+                        isActive === false ? styles.statusTitleEliminated : styles.statusTitleActive,
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {statusLoading
+                        ? 'Checking status…'
+                        : isActive == null
+                        ? '—'
+                        : isActive
+                        ? 'You are still in the game'
+                        : 'You have been eliminated'}
+                    </Text>
+                    {!!startedAt && !endedAt && (
+                      <Text style={styles.statusSub}>Game started {new Date(startedAt).toLocaleString()}</Text>
+                    )}
+                    {!!endedAt && (
+                      <Text style={styles.statusSub}>Game ended {new Date(endedAt).toLocaleString()}</Text>
+                    )}
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                    <View style={styles.cardHalf}>
+                      <Text style={styles.cardTitle}>Your Target</Text>
+                      <Text style={styles.cardBody} numberOfLines={1}>{statusLoading ? '—' : targetName}</Text>
+                      <Text style={styles.cardBodyMuted} numberOfLines={2}>{statusLoading ? '' : (dareText !== '—' ? `“${dareText}”` : '')}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.statsRow}>
+                    <View style={styles.statPill}>
+                      <Text style={styles.statLabel}>Active</Text>
+                      <Text style={styles.statValue}>{activeCount ?? '—'}</Text>
+                    </View>
+                    <View style={styles.statPill}>
+                      <Text style={styles.statLabel}>Eliminations</Text>
+                      <Text style={styles.statValue}>{totalElims ?? '—'}</Text>
+                    </View>
+                    <View style={styles.statPill}>
+                      <Text style={styles.statLabel}>Your Kills</Text>
+                      <Text style={styles.statValue}>{myKills ?? '—'}</Text>
+                    </View>
+                  </View>
+                </View>
+              }
               renderItem={({ item }) => (
                 <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16, marginBottom: 12 }}>
                   <Text style={{ color: '#374151' }}>{item.text}</Text>
@@ -224,3 +401,108 @@ export default function PlayerFeedScreen() {
     />
   );
 }
+
+const styles = StyleSheet.create({
+  statusCard: {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  statusCardActive: {
+    backgroundColor: '#fff',
+    borderColor: '#e5e7eb',
+  },
+  statusCardEliminated: {
+    backgroundColor: '#fee2e2',
+    borderColor: '#ef4444',
+  },
+  statusTitle: {
+    fontWeight: '800',
+    fontSize: 18,
+  },
+  statusTitleActive: {
+    color: '#111827',
+  },
+  statusTitleEliminated: {
+    color: '#991b1b',
+  },
+  statusSub: {
+    color: '#6b7280',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  heroCard: {
+    borderRadius: 16,
+    padding: 16,
+  },
+  heroIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#ffffff33',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroLabel: {
+    color: '#ffffffcc',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  heroTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  heroSub: {
+    color: '#ffffffcc',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  cardHalf: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e5e7eb',
+  },
+  cardTitle: {
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 6,
+  },
+  cardBody: {
+    color: '#111827',
+  },
+  cardBodyMuted: {
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  statPill: {
+    flex: 1,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e5e7eb',
+  },
+  statLabel: {
+    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  statValue: {
+    color: COLORS.brandPrimary,
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+});

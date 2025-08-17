@@ -1,58 +1,33 @@
 import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../components/CollapsibleHeader';
-import { View, Text, Switch, ScrollView, RefreshControl, ActivityIndicator, FlatList, TouchableOpacity } from 'react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { View, Text, Switch, ScrollView, RefreshControl, TouchableOpacity, Alert } from 'react-native';
+import { useState } from 'react';
 import RoleToggle from '../role-toggle';
 import { useGroupsStore } from '../../../state/groups';
-import { supabase } from '../../../lib/supabase';
-import { useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
+import { COLORS } from '../../../theme/colors';
 
 export default function AdminSettingsScreen() {
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const router = useRouter();
   const { id: groupId } = useGroupsStore();
-  const [loadingConvos, setLoadingConvos] = useState(false);
-  const [conversations, setConversations] = useState<any[]>([]);
-
-  const canLoad = useMemo(() => Boolean(groupId), [groupId]);
-
-  async function loadConversations() {
-    if (!canLoad) return;
-    try {
-      setLoadingConvos(true);
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr) throw userErr;
-      const user = userRes?.user;
-      if (!user) { setConversations([]); return; }
-
-      const { data, error } = await supabase
-        .from('conversations')
-        .select('*')
-        .eq('group_id', groupId as string)
-        .eq('conversation_kind', 'PLAYER_ADMIN')
-        .order('last_message_at', { ascending: false })
-        .limit(100);
-      if (error) throw error;
-      setConversations(Array.isArray(data) ? data : []);
-    } catch (e) {
-      // noop
-    } finally {
-      setLoadingConvos(false);
-    }
-  }
-
-  useEffect(() => {
-    loadConversations();
-  }, [groupId]);
 
   async function onRefresh() {
     setRefreshing(true);
     try {
-      await loadConversations();
       await new Promise(res => setTimeout(res, 300));
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function onCopyGroupId() {
+    if (!groupId) return;
+    try {
+      await Clipboard.setStringAsync(groupId);
+      Alert.alert('Copied', 'Group ID copied to clipboard.');
+    } catch (e) {
+      Alert.alert('Copy failed', 'Could not copy group ID.');
     }
   }
 
@@ -90,37 +65,22 @@ export default function AdminSettingsScreen() {
             <Text style={{ color: '#6b7280', marginTop: 8 }}>When enabled, a hunter automatically inherits their target's dare.</Text>
           </View>
 
-          <View style={{ marginTop: 16 }}>
-            <Text style={{ fontWeight: '800', marginBottom: 8 }}>Conversations</Text>
-            {loadingConvos ? (
-              <View style={{ paddingVertical: 12 }}>
-                <ActivityIndicator />
+          <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16, marginTop: 16 }}>
+            <Text style={{ fontWeight: '700' }}>Invite friends</Text>
+            <Text style={{ color: '#6b7280', marginTop: 4 }}>Share this group ID for others to join:</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+              <View style={{ flex: 1, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
+                <Text numberOfLines={1} style={{ color: '#111827' }}>{groupId ?? '—'}</Text>
               </View>
-            ) : conversations.length === 0 ? (
-              <Text style={{ color: '#6b7280' }}>No conversations yet.</Text>
-            ) : (
-              <FlatList
-                scrollEnabled={false}
-                data={conversations}
-                keyExtractor={(item) => String(item.id)}
-                renderItem={({ item }) => {
-                  const when = item.last_message_at ? new Date(item.last_message_at).toLocaleString() : new Date(item.created_at).toLocaleString();
-                  return (
-                    <TouchableOpacity onPress={() => router.push(`/group/admin/conversation/${item.id}`)}>
-                      <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#e5e7eb' }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                          <Text style={{ fontWeight: '800' }}>Player conversation</Text>
-                          <Text style={{ color: '#6b7280', fontSize: 12 }}>{when}</Text>
-                        </View>
-                        <Text style={{ color: '#6b7280', marginTop: 4, fontSize: 12 }}>
-                          You and a player
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-            )}
+              <View style={{ width: 8 }} />
+              <TouchableOpacity
+                onPress={onCopyGroupId}
+                disabled={!groupId}
+                style={{ backgroundColor: groupId ? COLORS.brandPrimary : '#cbd5e1', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12 }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '800' }}>Copy</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
       )}

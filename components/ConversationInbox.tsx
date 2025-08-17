@@ -34,27 +34,58 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
     if (!canLoad) return;
     try {
       setLoading(true);
-      let query = supabase
-        .from('conversations')
-        .select('*')
-        .eq('group_id', groupId as string)
-        .order('last_message_at', { ascending: false })
-        .limit(200);
-
+      let convos: any[] = [];
       if (mode === 'player') {
-        query = query.eq('player_id', playerId as string);
-      } else {
-        query = query.eq('conversation_kind', 'PLAYER_ADMIN');
-      }
+        // Fetch admin-player thread for this player
+        const adminQuery = supabase
+          .from('conversations')
+          .select('*')
+          .eq('group_id', groupId as string)
+          .eq('conversation_kind', 'PLAYER_ADMIN')
+          .eq('player_id', playerId as string)
+          .limit(100);
+        // Fetch hunter-target threads where this player is hunter
+        const hunterQuery = supabase
+          .from('conversations')
+          .select('*')
+          .eq('group_id', groupId as string)
+          .eq('conversation_kind', 'PLAYER_TARGET')
+          .eq('player_id', playerId as string)
+          .limit(200);
+        // Fetch hunter-target threads where this player is target (show as "Hunter")
+        const targetQuery = supabase
+          .from('conversations')
+          .select('*')
+          .eq('group_id', groupId as string)
+          .eq('conversation_kind', 'PLAYER_TARGET')
+          .eq('target_player_id', playerId as string)
+          .limit(200);
 
-      const { data, error } = await query;
-      if (error) throw error;
-      const convos = Array.isArray(data) ? data : [];
-      setConversations(convos);
+        const [adminRes, hunterRes, targetRes] = await Promise.all([adminQuery, hunterQuery, targetQuery]);
+        if (adminRes.error) throw adminRes.error;
+        if (hunterRes.error) throw hunterRes.error;
+        if (targetRes.error) throw targetRes.error;
+        convos = ([...(adminRes.data || []), ...(hunterRes.data || []), ...(targetRes.data || [])] as any[])
+          .sort((a, b) => new Date(b.last_message_at || b.created_at).getTime() - new Date(a.last_message_at || a.created_at).getTime());
+        setConversations(convos);
+      } else {
+        const { data, error } = await supabase
+          .from('conversations')
+          .select('*')
+          .eq('group_id', groupId as string)
+          .eq('conversation_kind', 'PLAYER_ADMIN')
+          .order('last_message_at', { ascending: false })
+          .limit(200);
+        if (error) throw error;
+        convos = Array.isArray(data) ? data : [];
+        setConversations(convos);
+      }
 
       // Build display names map
       const ids = (mode === 'player'
-        ? convos.map((c: any) => c.target_player_id)
+        ? convos
+            .filter((c: any) => c.conversation_kind === 'PLAYER_TARGET' && c.player_id === playerId)
+            .map((c: any) => c.target_player_id)
         : convos.map((c: any) => c.player_id)
       ).filter((id: string | null) => Boolean(id)) as string[];
 
@@ -179,8 +210,13 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
               ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
               renderItem={({ item }) => {
                 const isAdminConvo = item.conversation_kind === 'PLAYER_ADMIN';
+                const isHunterTarget = item.conversation_kind === 'PLAYER_TARGET';
                 const titleText = mode === 'player'
-                  ? (isAdminConvo ? 'Admin' : (nameMap[item.target_player_id] || 'Target'))
+                  ? (isAdminConvo
+                      ? 'Admin'
+                      : (item.player_id === playerId
+                          ? (nameMap[item.target_player_id] || 'Target')
+                          : 'Hunter'))
                   : (nameMap[item.player_id] || 'Unknown player');
                 const when = item.last_message_at ? new Date(item.last_message_at).toLocaleString() : new Date(item.created_at).toLocaleString();
                 const subtitleText = mode === 'player'

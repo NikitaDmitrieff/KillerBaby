@@ -1,5 +1,6 @@
 import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../../components/CollapsibleHeader';
 import { View, Text, ActivityIndicator, FlatList, RefreshControl, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
 import RoleToggle from '../../role-toggle';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -131,8 +132,24 @@ export default function PlayerConversationScreen() {
       )}
       renderContent={({ contentInsetTop, onScroll, scrollRef }) => (
         <View style={{ flex: 1 }}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Back to inbox"
+            onPress={() => {
+              try {
+                if ((router as any).canGoBack?.()) {
+                  (router as any).back();
+                  return;
+                }
+              } catch {}
+              router.replace('/group/player/conversation');
+            }}
+            style={{ position: 'absolute', left: 16, top: contentInsetTop + 8, zIndex: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.brandPrimary, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}
+          >
+            <Ionicons name="chevron-back" size={22} color="#fff" />
+          </TouchableOpacity>
           {loading ? (
-            <View style={{ paddingTop: contentInsetTop, paddingHorizontal: 16, alignItems: 'center' }}>
+            <View style={{ paddingTop: contentInsetTop + 56, paddingHorizontal: 16, alignItems: 'center' }}>
               <ActivityIndicator />
               <Text style={{ marginTop: 8, color: '#6b7280' }}>Loading…</Text>
             </View>
@@ -143,7 +160,7 @@ export default function PlayerConversationScreen() {
               scrollEventThrottle={16}
               data={messages}
               keyExtractor={(item) => String(item.id)}
-              contentContainerStyle={{ paddingTop: contentInsetTop, paddingHorizontal: 16, paddingBottom: 100 }}
+              contentContainerStyle={{ paddingTop: contentInsetTop + 56, paddingHorizontal: 16, paddingBottom: 100 }}
               refreshControl={
                 <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#9d0208" colors={["#9d0208"]} />
               }

@@ -34,7 +34,7 @@ export default function GroupCreateScreen() {
       setSubmitting(true);
       // Ensure we have a session (best-effort anonymous sign-in like settings screen)
       const sessRes = await supabase.auth.getSession();
-      if (!sessRes.session) {
+      if (!sessRes.data.session) {
         const { error } = await (supabase.auth as any).signInAnonymously?.();
         if (error) {
           console.warn('[create-group] signInAnonymously failed:', (error as any)?.message);

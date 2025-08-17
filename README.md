@@ -49,7 +49,7 @@ Both panel headers use a collapsible gradient header (`components/CollapsibleHea
   - `group_players`: added `is_active`, `removed_at`
   - `assignments`: new core table `assassin_player_id -> target_player_id` with `dare_text` and lifecycle
   - `dare_templates`: optional, reusable dares per group
-  - `messages`: in-group messages; either anonymous to your target or directed to the group admin (creator)
+  - `messages`: in-group messages; either anonymous to your target or directed to the group admin (creator). Supports player senders via `sender_player_id` and admin senders via `sender_profile_id`.
 - Indexes
   - `ux_assignments_active_out`: unique `(group_id, assassin_player_id)` where `is_active`
   - `ux_assignments_active_in`: unique `(group_id, target_player_id)` where `is_active`
@@ -73,7 +73,7 @@ Both panel headers use a collapsible gradient header (`components/CollapsibleHea
   - **`group_players`**: membership of profiles in a group. Columns include `id`, `group_id` (FK), `display_name`, `owner_user_id` (FK → `profiles.id`, nullable), `created_at`, `is_active`, `removed_at`.
   - **`assignments`**: the ring edges. Columns include `id`, `group_id` (FK), `assassin_player_id` (FK → `group_players.id`), `target_player_id` (FK → `group_players.id`), `dare_text`, `is_active`, `reason_closed`, `created_at`, `created_by_profile_id` (FK → `profiles.id`), `closed_at`, `replaced_by_assignment_id` (self-FK).
   - **`dare_templates`**: optional, reusable prompts per group. Columns include `id`, `group_id` (FK), `text`, `is_active`, `created_by_profile_id` (FK), `created_at`, `updated_at`.
-  - **`messages`**: player-to-player/admin communications. Columns include `id`, `group_id` (FK), `sender_player_id` (FK → `group_players.id`), `created_by_profile_id` (FK → `profiles.id`), `message_kind` (`TO_TARGET` or `TO_ADMIN`), `is_anonymous`, `to_player_id` (FK when `TO_TARGET`), `to_profile_id` (FK; auto-set for `TO_ADMIN`), `body` (text), `tags` (`message_tag[]`), `related_assignment_id` (FK → `assignments.id`), `created_at`, `read_at`, `resolved_at`, `resolution_note`.
+  - **`messages`**: player-to-player/admin communications. Columns include `id`, `group_id` (FK), `sender_player_id` (FK → `group_players.id`, nullable), `sender_profile_id` (FK → `profiles.id`, nullable), `created_by_profile_id` (FK → `profiles.id`, NOT NULL), `message_kind` (`TO_TARGET`, `TO_ADMIN`, `ADMIN_TO_PLAYER`), `is_anonymous`, `to_player_id` (FK when addressing a player), `to_profile_id` (FK when addressing the admin; auto-set for `TO_ADMIN`), `body` (text), `tags` (`message_tag[]`), `related_assignment_id` (FK → `assignments.id`), `created_at`, `read_at`, `resolved_at`, `resolution_note`, `conversation_id` (FK → `conversations.id`).
 
 - **Relationships (FKs)**
   - `assignments.group_id` → `groups.id`
@@ -92,11 +92,46 @@ Both panel headers use a collapsible gradient header (`components/CollapsibleHea
   - `group_players`: primary key on `id`; `group_players_unique_display_name_per_group` unique `(group_id, lower(display_name))`; `group_players_one_per_user_per_group` unique `(group_id, owner_user_id)` where `owner_user_id is not null`.
   - `groups`: primary key on `id`; `groups_join_code_key` unique on `join_code`.
   - `dare_templates`: primary key on `id`; `ix_dare_templates_group` on `(group_id, is_active)`.
-  - `messages`: primary key on `id`; constraint `messages_kind_target_chk` enforces proper recipients (`TO_TARGET` requires `to_player_id` and `is_anonymous=true`; `TO_ADMIN` requires no `to_player_id`); trigger `trg_set_message_admin_recipient` sets `to_profile_id` from `groups.created_by` for `TO_ADMIN` messages.
+  - `messages`: primary key on `id`; checks enforce shapes per kind:
+    - `TO_ADMIN`: player → admin. Requires `sender_player_id` set, `sender_profile_id` null, `to_player_id` null.
+    - `ADMIN_TO_PLAYER`: admin → player. Requires `sender_profile_id` set, `sender_player_id` null, `to_player_id` set.
+    - `TO_TARGET`: hunter → target. Requires `sender_player_id` set, `sender_profile_id` null, `to_player_id` set, `to_profile_id` null, `is_anonymous=true`.
+    - Trigger `trg_set_message_admin_recipient` sets `to_profile_id` from `groups.created_by` for `TO_ADMIN` messages.
+  - `conversations`: check enforces shape per kind:
+    - `PLAYER_ADMIN`: `player_id` and `admin_profile_id` set; `target_player_id` null.
+    - `PLAYER_TARGET`: `player_id` and `target_player_id` set; `admin_profile_id` null.
 
 - **Enums**
   - `message_kind`: `TO_TARGET`, `TO_ADMIN`
   - `message_tag`: `DARE_CHANGE_REQUEST`, `DARE_CLARIFICATION`, `GENERAL`, `REPORT`, `OTHER`
+
+## Messaging and Conversations
+
+Conversations are stored in a `conversations` table (backend). There are two kinds (enum `conversation_kind`):
+
+- `PLAYER_ADMIN`: direct chat between a player and the admin.
+- `PLAYER_TARGET`: chat between a hunter (player) and their current target.
+
+Frontend behaviors:
+
+- Player inbox shows:
+  - Their `PLAYER_ADMIN` thread (title: “Admin”).
+  - `PLAYER_TARGET` threads where they are the hunter (title: the target’s display name).
+  - `PLAYER_TARGET` threads where they are the target (title: “Hunter”).
+- Admin inbox shows all `PLAYER_ADMIN` threads (title: the player’s display name).
+
+Sending messages:
+
+- In `PLAYER_ADMIN` conversations:
+  - Player → Admin: insert into `messages` with `message_kind='TO_ADMIN'` (trigger sets `to_profile_id` = `groups.created_by`). Use `sender_player_id` and leave `sender_profile_id` null.
+  - Admin → Player: insert into `messages` with `message_kind='ADMIN_TO_PLAYER'`. Use `sender_profile_id` and leave `sender_player_id` null.
+- In `PLAYER_TARGET` conversations:
+  - Hunter → Target: insert into `messages` with `message_kind='TO_TARGET'`, `is_anonymous=true`, and set `to_player_id` to the target player.
+
+Read state:
+
+- Admin views mark admin-addressed messages as read (`to_profile_id` = admin).
+- Player views mark player-addressed messages as read (`to_player_id` = their `group_players.id`).
 
 - **Ring model (how it works)**
   - Active gameplay is represented by active rows in `assignments` such that every active player appears exactly once as an assassin and exactly once as a target within a `group_id`.
@@ -130,4 +165,5 @@ Cookbook (DB-side)
 - Edit dare: call `edit_active_dare(groupId, assassinPlayerId, newText)`.
 - Check integrity: `select assert_perfect_ring(groupId)`.
 - Send anonymous message to your target: insert into `messages` with `message_kind='TO_TARGET'`, `is_anonymous=true`, `to_player_id=<target_player_id>`, set `tags` as needed.
-- Send a message to the admin: insert into `messages` with `message_kind='TO_ADMIN'`; `to_profile_id` is auto-populated from `groups.created_by` by trigger.
+- Send a message to the admin: insert into `messages` with `message_kind='TO_ADMIN'`; `to_profile_id` is auto-populated from `groups.created_by` by trigger. Use `sender_player_id`.
+- Admin replies to a player: insert into `messages` with `message_kind='ADMIN_TO_PLAYER'`; set `sender_profile_id` = admin, `to_player_id` = player.

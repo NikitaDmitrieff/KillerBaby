@@ -1,5 +1,5 @@
 import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../components/CollapsibleHeader';
-import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, Alert, StyleSheet, RefreshControl, TextInput } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, Alert, StyleSheet, RefreshControl } from 'react-native';
 import RoleToggle from '../role-toggle';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
@@ -7,6 +7,7 @@ import { useGroupsStore } from '../../../state/groups';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, GRADIENTS } from '../../../theme/colors';
+import { router } from 'expo-router';
 
 export default function PlayerAssignmentScreen() {
   const { id: groupId, playerId } = useGroupsStore();
@@ -16,26 +17,25 @@ export default function PlayerAssignmentScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [targetPlayerId, setTargetPlayerId] = useState<string | null>(null);
-
-  // message compose state
-  const [messageKind, setMessageKind] = useState<'TO_TARGET' | 'TO_ADMIN'>('TO_TARGET');
-  const [messageBody, setMessageBody] = useState('');
-  const [messageTags, setMessageTags] = useState<string[]>(['GENERAL']);
-  const [sending, setSending] = useState(false);
+  const [gameStatus, setGameStatus] = useState<'setup' | 'active' | 'ended' | null>(null);
 
   const hasAssignment = useMemo(() => targetName !== '—' && dareText !== '—', [targetName, dareText]);
-  const canMessageTarget = hasAssignment && Boolean(targetPlayerId);
-
-  const ALL_TAGS = ['DARE_CHANGE_REQUEST', 'DARE_CLARIFICATION', 'GENERAL', 'REPORT', 'OTHER'];
+  
 
   async function loadAssignment() {
     if (!groupId || !playerId) return;
     try {
       setLoading(true);
-      const { data } = await supabase.rpc('get_current_target', {
-        p_group_id: groupId,
-        p_assassin_player_id: playerId,
-      });
+      // Fetch group status in parallel
+      const [{ data: groupRow }, { data }] = await Promise.all([
+        supabase.from('groups').select('game_status').eq('id', groupId).single(),
+        supabase.rpc('get_current_target', {
+          p_group_id: groupId,
+          p_assassin_player_id: playerId,
+        }),
+      ]);
+      const status = (groupRow as any)?.game_status as 'setup' | 'active' | 'ended' | undefined;
+      setGameStatus(status ?? null);
       const row = Array.isArray(data) ? (data[0] as any) : null;
       if (row) {
         setTargetName((row.display_name as string) || '—');
@@ -61,10 +61,12 @@ export default function PlayerAssignmentScreen() {
     if (!groupId || !playerId) return;
     try {
       setSubmitting(true);
+      const { data: userResult } = await supabase.auth.getUser();
+      const createdByProfileId = userResult?.user?.id ?? null;
       await supabase.rpc('eliminate_player', {
         p_group_id: groupId,
         p_assassin_player_id: playerId,
-        p_created_by_profile_id: null,
+        p_created_by_profile_id: createdByProfileId,
       });
       await loadAssignment();
       Alert.alert('Success', 'Elimination recorded.');
@@ -75,53 +77,19 @@ export default function PlayerAssignmentScreen() {
     }
   }
 
-  async function handleSendMessage() {
-    if (!groupId || !playerId) return;
-    if (!messageBody.trim()) {
-      Alert.alert('Empty message', 'Please write something to send.');
-      return;
-    }
-    if (messageKind === 'TO_TARGET' && !canMessageTarget) {
-      Alert.alert('No target', 'You do not have a target to message yet.');
-      return;
-    }
-
-    try {
-      setSending(true);
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr) throw userErr;
-      const user = userRes?.user;
-      if (!user) throw new Error('Not authenticated');
-
-      const insertPayload: any = {
-        group_id: groupId,
-        sender_player_id: playerId,
-        created_by_profile_id: user.id,
-        message_kind: messageKind,
-        is_anonymous: messageKind === 'TO_TARGET',
-        body: messageBody.trim(),
-        tags: messageTags,
-      };
-      if (messageKind === 'TO_TARGET') {
-        insertPayload.to_player_id = targetPlayerId;
-      }
-
-      const { error } = await supabase.from('messages').insert([insertPayload]);
-      if (error) throw error;
-
-      setMessageBody('');
-      setMessageTags(['GENERAL']);
-      Alert.alert('Sent', messageKind === 'TO_TARGET' ? 'Sent to your target.' : 'Sent to the admin.');
-    } catch (e: any) {
-      Alert.alert('Send failed', e?.message ?? 'Could not send message');
-    } finally {
-      setSending(false);
-    }
+  function confirmEliminate() {
+    if (!hasAssignment || submitting || gameStatus === 'ended') return;
+    Alert.alert(
+      'Confirm elimination',
+      `Mark ${targetName || 'your target'} as eliminated?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Yes, confirm', style: 'destructive', onPress: handleEliminate },
+      ]
+    );
   }
 
-  function toggleTag(tag: string) {
-    setMessageTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
-  }
+  
 
   async function onRefresh() {
     setRefreshing(true);
@@ -187,87 +155,52 @@ export default function PlayerAssignmentScreen() {
                       </View>
                       <View style={{ marginLeft: 12, flex: 1 }}>
                         <Text style={styles.heroLabel}>Current Target</Text>
-                        <Text style={styles.heroTitle} numberOfLines={1}>{hasAssignment ? targetName : 'Waiting for assignment'}</Text>
+                        <Text style={styles.heroTitle} numberOfLines={1}>
+                          {gameStatus === 'ended' ? 'Game ended' : (hasAssignment ? targetName : 'Waiting for assignment')}
+                        </Text>
                       </View>
                     </View>
                   </LinearGradient>
 
                   <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
                     <TouchableOpacity
-                      disabled={submitting || !hasAssignment}
-                      onPress={handleEliminate}
-                      style={[styles.primaryButton, { opacity: submitting || !hasAssignment ? 0.6 : 1 }]}
+                      onPress={() => router.navigate('/group/player/conversation')}
+                      style={styles.secondaryButton}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="chatbubbles-outline" size={18} color={COLORS.brandPrimary} />
+                        <Text style={styles.secondaryButtonText}>Message</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      disabled={submitting || !hasAssignment || gameStatus === 'ended'}
+                      onPress={confirmEliminate}
+                      style={[styles.primaryButton, { opacity: (submitting || !hasAssignment || gameStatus === 'ended') ? 0.6 : 1 }]}
                     >
                       {submitting ? (
                         <ActivityIndicator color="#fff" />
                       ) : (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                          <Text style={styles.primaryButtonText}>Eliminated</Text>
+                          <Text style={styles.primaryButtonText}>{gameStatus === 'ended' ? 'Ended' : 'Eliminated'}</Text>
                         </View>
                       )}
                     </TouchableOpacity>
                   </View>
 
-                  <View style={styles.composeCard}>
-                    <Text style={styles.composeTitle}>Message</Text>
-                    <View style={styles.segmentRow}>
-                      <TouchableOpacity
-                        onPress={() => setMessageKind('TO_TARGET')}
-                        disabled={!canMessageTarget}
-                        style={[styles.segmentButton, messageKind === 'TO_TARGET' ? styles.segmentButtonActive : null, !canMessageTarget ? styles.segmentButtonDisabled : null]}
-                      >
-                        <Text style={[styles.segmentText, messageKind === 'TO_TARGET' ? styles.segmentTextActive : null]}>Target</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => setMessageKind('TO_ADMIN')}
-                        style={[styles.segmentButton, messageKind === 'TO_ADMIN' ? styles.segmentButtonActive : null]}
-                      >
-                        <Text style={[styles.segmentText, messageKind === 'TO_ADMIN' ? styles.segmentTextActive : null]}>Admin</Text>
-                      </TouchableOpacity>
+                  {gameStatus === 'ended' && (
+                    <View style={[styles.card, { marginTop: 12 }]}> 
+                      <Text style={styles.cardTitle}>Winner</Text>
+                      <Text style={styles.cardBody}>The game has ended. Congrats to the last remaining assassin!</Text>
                     </View>
-
-                    <View style={styles.tagsRow}>
-                      {ALL_TAGS.map(tag => (
-                        <TouchableOpacity key={tag} onPress={() => toggleTag(tag)} style={[styles.tagChip, messageTags.includes(tag) ? styles.tagChipActive : null]}>
-                          <Text style={[styles.tagText, messageTags.includes(tag) ? styles.tagTextActive : null]}>
-                            {tag.replace(/_/g, ' ').toLowerCase()}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    <TextInput
-                      value={messageBody}
-                      onChangeText={setMessageBody}
-                      placeholder={messageKind === 'TO_TARGET' ? 'Write an anonymous note to your target…' : 'Write a message to the admin…'}
-                      placeholderTextColor="#9ca3af"
-                      multiline
-                      style={styles.input}
-                    />
-
-                    <TouchableOpacity
-                      onPress={handleSendMessage}
-                      disabled={sending || !messageBody.trim() || (messageKind === 'TO_TARGET' && !canMessageTarget)}
-                      style={[styles.sendButton, { opacity: sending || !messageBody.trim() || (messageKind === 'TO_TARGET' && !canMessageTarget) ? 0.6 : 1 }]}
-                    >
-                      {sending ? (
-                        <ActivityIndicator color="#fff" />
-                      ) : (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <Ionicons name="send" size={16} color="#fff" />
-                          <Text style={styles.sendButtonText}>Send</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  </View>
+                  )}
                 </View>
               )}
               renderItem={({ item }) => (
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}>{item.title}</Text>
                   <Text style={styles.cardBody}>
-                    {hasAssignment ? `“${item.value}”` : '—'}
+                    {gameStatus === 'ended' ? '—' : (hasAssignment ? `“${item.value}”` : '—')}
                   </Text>
                 </View>
               )}
@@ -323,6 +256,21 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#fff',
+    fontWeight: '800',
+  },
+  secondaryButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.brandPrimary,
+  },
+  secondaryButtonText: {
+    color: COLORS.brandPrimary,
     fontWeight: '800',
   },
   card: {

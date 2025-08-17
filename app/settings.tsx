@@ -4,6 +4,8 @@ import { ActivityIndicator, Alert, SafeAreaView, ScrollView, Text, TextInput, To
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { COLORS } from '../theme/colors';
+import * as Clipboard from 'expo-clipboard';
+import { useGroupsStore } from '../state/groups';
 
 export default function SettingsScreen() {
   const [loading, setLoading] = useState(true);
@@ -13,6 +15,7 @@ export default function SettingsScreen() {
   const [joinedAt, setJoinedAt] = useState<string>('');
   const [username, setUsername] = useState('');
   const [initialUsername, setInitialUsername] = useState('');
+  const { id: groupId } = useGroupsStore();
 
   useEffect(() => {
     let mounted = true;
@@ -124,6 +127,16 @@ export default function SettingsScreen() {
     }
   };
 
+  const onCopyGroupId = async () => {
+    if (!groupId) return;
+    try {
+      await Clipboard.setStringAsync(groupId);
+      Alert.alert('Copied', 'Group ID copied to clipboard.');
+    } catch (e) {
+      Alert.alert('Copy failed', 'Could not copy group ID.');
+    }
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}>
@@ -188,6 +201,26 @@ export default function SettingsScreen() {
             <TouchableOpacity onPress={() => router.push('/secure-account')} style={{ backgroundColor: '#111827', padding: 16, borderRadius: 14, alignItems: 'center' }}>
               <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Secure my account</Text>
             </TouchableOpacity>
+
+            <View style={{ height: 1, backgroundColor: '#e5e7eb', marginVertical: 8 }} />
+            <Text style={{ fontWeight: '800', fontSize: 20 }}>Invite friends</Text>
+            <View style={{ backgroundColor: '#f7f7fb', padding: 16, borderRadius: 16, marginTop: 8 }}>
+              <Text style={{ color: '#6b7280' }}>Group ID</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                <View style={{ flex: 1, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
+                  <Text numberOfLines={1} style={{ color: '#111827' }}>{groupId ?? '—'}</Text>
+                </View>
+                <View style={{ width: 8 }} />
+                <TouchableOpacity
+                  onPress={onCopyGroupId}
+                  disabled={!groupId}
+                  style={{ backgroundColor: groupId ? COLORS.brandPrimary : '#cbd5e1', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12 }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '800' }}>Copy</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={{ color: '#6b7280', marginTop: 8 }}>Share this ID with friends so they can join your group.</Text>
+            </View>
           </>
         )}
       </ScrollView>

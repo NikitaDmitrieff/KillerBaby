@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useGroupsStore } from '../../../../state/groups';
 import { supabase } from '../../../../lib/supabase';
 import { useRouter } from 'expo-router';
+import Svg, { Circle as SvgCircle, Line as SvgLine, Path as SvgPath, Text as SvgText } from 'react-native-svg';
 
 type EdgeRow = { assassin_player_id: string; assassin_name: string; target_player_id: string; target_name: string; dare_text: string };
 type PlayerRow = { player_id: string; display_name: string };
@@ -80,6 +81,122 @@ function DareCard({ text }: DareCardProps) {
   );
 }
 
+type RingVisualizerProps = {
+  edges: EdgeRow[];
+};
+
+function RingVisualizer({ edges }: RingVisualizerProps) {
+  const [size, setSize] = useState(0);
+  const onLayout = (e: any) => {
+    const w = e?.nativeEvent?.layout?.width ?? 0;
+    if (w && w !== size) setSize(w);
+  };
+
+  const { orderedIds, nameById } = useMemo(() => {
+    const map: Record<string, string> = {};
+    const names = new Map<string, string>();
+    for (const e of edges) {
+      map[e.assassin_player_id] = e.target_player_id;
+      names.set(e.assassin_player_id, e.assassin_name);
+      names.set(e.target_player_id, e.target_name);
+    }
+    const ids = Object.keys(map);
+    if (ids.length === 0) return { orderedIds: [] as string[], nameById: names };
+    let start = ids[0];
+    for (const id of ids) {
+      const a = (names.get(id) || '').toLowerCase();
+      const b = (names.get(start) || '').toLowerCase();
+      if (a < b) start = id;
+    }
+    const visited = new Set<string>();
+    const order: string[] = [];
+    let cur: string | undefined = start;
+    while (cur && !visited.has(cur) && order.length < ids.length) {
+      order.push(cur);
+      visited.add(cur);
+      cur = map[cur];
+    }
+    if (order.length !== ids.length) {
+      return { orderedIds: ids, nameById: names };
+    }
+    return { orderedIds: order, nameById: names };
+  }, [edges]);
+
+  const nodeRadius = Math.max(14, Math.min(20, Math.round((size / 320) * 16)));
+  const margin = 24;
+  const center = { x: size / 2, y: size / 2 };
+  const radius = Math.max(0, (size / 2) - margin - nodeRadius);
+
+  function getPoint(angleRad: number) {
+    return {
+      x: center.x + radius * Math.cos(angleRad),
+      y: center.y + radius * Math.sin(angleRad),
+    };
+  }
+
+  function getAngleForIndex(index: number, total: number) {
+    const t = (index / total) * Math.PI * 2 - Math.PI / 2;
+    return t;
+  }
+
+  function getArrowEnd(from: { x: number; y: number }, to: { x: number; y: number }) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const len = Math.max(1, Math.hypot(dx, dy));
+    const ux = dx / len;
+    const uy = dy / len;
+    const end = { x: to.x - ux * (nodeRadius + 2), y: to.y - uy * (nodeRadius + 2) };
+    return { end, ux, uy };
+  }
+
+  function arrowHeadPath(endX: number, endY: number, ux: number, uy: number) {
+    const sizeAh = 8;
+    const leftX = endX - ux * sizeAh + -uy * (sizeAh * 0.6);
+    const leftY = endY - uy * sizeAh + ux * (sizeAh * 0.6);
+    const rightX = endX - ux * sizeAh + uy * (sizeAh * 0.6);
+    const rightY = endY - uy * sizeAh + -ux * (sizeAh * 0.6);
+    return `M ${leftX} ${leftY} L ${endX} ${endY} L ${rightX} ${rightY}`;
+  }
+
+  return (
+    <View style={{ width: '100%', aspectRatio: 1 }} onLayout={onLayout}>
+      {size > 0 && (
+        <Svg width={size} height={size}>
+          {orderedIds.map((fromId, idx) => {
+            const toId = edges.find((e) => e.assassin_player_id === fromId)?.target_player_id;
+            if (!toId) return null;
+            const total = orderedIds.length || 1;
+            const fromPt = getPoint(getAngleForIndex(idx, total));
+            const toIndex = orderedIds.indexOf(toId);
+            const toPt = getPoint(getAngleForIndex(toIndex, total));
+            const { end, ux, uy } = getArrowEnd(fromPt, toPt);
+            return (
+              <>
+                <SvgLine key={`line-${fromId}`} x1={fromPt.x} y1={fromPt.y} x2={end.x} y2={end.y} stroke="#9d0208" strokeWidth={1.5} opacity={0.8} />
+                <SvgPath key={`ah-${fromId}`} d={arrowHeadPath(end.x, end.y, ux, uy)} stroke="#9d0208" strokeWidth={1.5} fill="none" />
+              </>
+            );
+          })}
+          {orderedIds.map((id, idx) => {
+            const total = orderedIds.length || 1;
+            const p = getPoint(getAngleForIndex(idx, total));
+            const name = nameById.get(id) || '?';
+            const initials = getInitials(name);
+            return (
+              <>
+                <SvgCircle key={`node-${id}`} cx={p.x} cy={p.y} r={nodeRadius} fill="#fde6e8" stroke="#9d0208" strokeWidth={2} />
+                <SvgText key={`txt-${id}`} x={p.x} y={p.y + 4} fontSize={Math.max(10, Math.floor(nodeRadius * 0.9))} fontWeight="800" textAnchor="middle" fill="#9d0208">
+                  {initials}
+                </SvgText>
+              </>
+            );
+          })}
+        </Svg>
+      )}
+    </View>
+  );
+}
+
 export default function AdminAssignmentsScreen() {
   const router = useRouter();
   const { id: groupId } = useGroupsStore();
@@ -87,31 +204,49 @@ export default function AdminAssignmentsScreen() {
   const [edges, setEdges] = useState<EdgeRow[]>([]);
   const [seeding, setSeeding] = useState(false);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
+  const [deadPlayers, setDeadPlayers] = useState<PlayerRow[]>([]);
   const [ringEditMode, setRingEditMode] = useState(false);
   const [mappingByAssassin, setMappingByAssassin] = useState<Record<string, string>>({});
   const [dareDraftByAssassin, setDareDraftByAssassin] = useState<Record<string, string>>({});
   const [savingRing, setSavingRing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showRing, setShowRing] = useState(false);
+  const [addedAssassinIds, setAddedAssassinIds] = useState<string[]>([]);
 
   async function loadRing() {
     if (!groupId) return;
     try {
       setLoading(true);
-      const [{ data: assigns, error: assignsErr }, { data: playersData, error: playersErr }] = await Promise.all([
+      const [
+        { data: assigns, error: assignsErr },
+        { data: playersData, error: playersErr },
+        { data: deadRows, error: deadErr },
+      ] = await Promise.all([
         supabase
           .from('assignments')
           .select('assassin_player_id, target_player_id, dare_text')
           .eq('group_id', groupId)
           .eq('is_active', true),
         supabase.rpc('get_active_players', { p_group_id: groupId }),
+        supabase
+          .from('group_players')
+          .select('id, display_name, is_dead')
+          .eq('group_id', groupId)
+          .eq('is_dead', true),
       ]);
       if (assignsErr) throw assignsErr;
       if (playersErr) throw playersErr;
+      if (deadErr) throw deadErr;
       const playerRows: PlayerRow[] = (playersData ?? []).map((p: any) => ({
         player_id: p.player_id as string,
         display_name: (p.display_name as string) || '—',
       }));
       setPlayers(playerRows);
+      const deadPlayerRows: PlayerRow[] = (deadRows ?? []).map((p: any) => ({
+        player_id: p.id as string,
+        display_name: (p.display_name as string) || '—',
+      }));
+      setDeadPlayers(deadPlayerRows);
       const nameById = new Map<string, string>(playerRows.map((p) => [p.player_id, p.display_name]));
       const rows: EdgeRow[] = (assigns ?? []).map((r: any) => ({
         assassin_player_id: r.assassin_player_id as string,
@@ -129,6 +264,7 @@ export default function AdminAssignmentsScreen() {
       });
       setDareDraftByAssassin(nextDrafts);
       setMappingByAssassin(nextMap);
+      setAddedAssassinIds([]);
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Failed to load assignments');
     } finally {
@@ -178,12 +314,46 @@ export default function AdminAssignmentsScreen() {
     setRingEditMode((v) => !v);
   }
 
+  function toggleRingVisualization() {
+    setShowRing((v) => !v);
+  }
+
   function setTargetForAssassin(assassinId: string, targetId: string) {
     setMappingByAssassin((prev) => ({ ...prev, [assassinId]: targetId }));
   }
 
+  function getParticipantIds(): string[] {
+    const existing = edges.map((e) => e.assassin_player_id);
+    const combined = Array.from(new Set([...existing, ...addedAssassinIds]));
+    return combined;
+  }
+
+  function toggleAddParticipant(playerId: string) {
+    setAddedAssassinIds((prev) => {
+      if (prev.includes(playerId)) {
+        return prev.filter((id) => id !== playerId);
+      }
+      // Initialize defaults for new participant
+      setDareDraftByAssassin((d) => (d[playerId] ? d : { ...d, [playerId]: 'Be creative!' }));
+      return [...prev, playerId];
+    });
+  }
+
+  function getName(playerId: string): string {
+    const p = players.find((pp) => pp.player_id === playerId) || deadPlayers.find((pp) => pp.player_id === playerId);
+    return p?.display_name ?? '—';
+  }
+
+  function getParticipantOptions(): PlayerRow[] {
+    const ids = getParticipantIds();
+    const byId = new Map<string, string>();
+    players.forEach((p) => byId.set(p.player_id, p.display_name));
+    deadPlayers.forEach((p) => byId.set(p.player_id, p.display_name));
+    return ids.map((id) => ({ player_id: id, display_name: byId.get(id) ?? '—' }));
+  }
+
   function validateRingMapping(): string | null {
-    const assassinIds = edges.map((e) => e.assassin_player_id);
+    const assassinIds = getParticipantIds();
     const selectedTargets = assassinIds.map((id) => mappingByAssassin[id]);
     if (selectedTargets.some((t) => !t)) return 'Each assassin must have a target.';
     for (const id of assassinIds) {
@@ -218,7 +388,7 @@ export default function AdminAssignmentsScreen() {
     }
     try {
       setSavingRing(true);
-      const assassins = edges.map((e) => e.assassin_player_id);
+      const assassins = getParticipantIds();
       const targets = assassins.map((id) => mappingByAssassin[id]);
       const dares = assassins.map((id) => dareDraftByAssassin[id] ?? '');
       const { error } = await supabase.rpc('reseed_active_ring', {
@@ -299,6 +469,12 @@ export default function AdminAssignmentsScreen() {
                   >
                     <Text style={{ color: ringEditMode ? '#fff' : '#111827', fontWeight: '700' }}>{ringEditMode ? 'Editing ring' : 'Edit ring'}</Text>
                   </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={toggleRingVisualization}
+                    style={{ backgroundColor: showRing ? '#9d0208' : '#e5e7eb', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
+                  >
+                    <Text style={{ color: showRing ? '#fff' : '#111827', fontWeight: '700' }}>{showRing ? 'Hide diagram' : 'Visualize ring'}</Text>
+                  </TouchableOpacity>
                   {ringEditMode && (
                     <TouchableOpacity
                       onPress={saveRingChanges}
@@ -307,6 +483,38 @@ export default function AdminAssignmentsScreen() {
                     >
                       {savingRing ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Save ring</Text>}
                     </TouchableOpacity>
+                  )}
+                  {ringEditMode && (
+                    <View style={{ width: '100%' }}>
+                      <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Add players to ring</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                          {deadPlayers
+                            .filter((p) => !edges.some((e) => e.assassin_player_id === p.player_id) && !addedAssassinIds.includes(p.player_id))
+                            .map((p) => (
+                              <TouchableOpacity
+                                key={`add-${p.player_id}`}
+                                onPress={() => toggleAddParticipant(p.player_id)}
+                                style={{ backgroundColor: '#f3f4f6', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9999 }}
+                              >
+                                <Text style={{ color: '#111827', fontWeight: '600' }}>{p.display_name}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          {addedAssassinIds.map((id) => {
+                            const name = getName(id);
+                            return (
+                              <TouchableOpacity
+                                key={`added-${id}`}
+                                onPress={() => toggleAddParticipant(id)}
+                                style={{ backgroundColor: '#1d4ed8', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9999 }}
+                              >
+                                <Text style={{ color: '#fff', fontWeight: '700' }}>Added: {name} ✕</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    </View>
                   )}
                 </View>
               )}
@@ -329,30 +537,77 @@ export default function AdminAssignmentsScreen() {
                     <View style={{ marginTop: 12 }}>
                       <Text style={{ fontWeight: '700', marginBottom: 6 }}>Select target for {item.assassin_name}</Text>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                        {players.map((p) => {
-                          const isSelected = mappingByAssassin[item.assassin_player_id] === p.player_id;
-                          const isSelf = p.player_id === item.assassin_player_id;
-                          return (
-                            <TouchableOpacity
-                              key={`${item.assassin_player_id}-${p.player_id}`}
-                              onPress={() => setTargetForAssassin(item.assassin_player_id, p.player_id)}
-                              disabled={isSelf}
-                              style={{
-                                backgroundColor: isSelected ? '#1d4ed8' : '#f3f4f6',
-                                paddingHorizontal: 10,
-                                paddingVertical: 8,
-                                borderRadius: 9999,
-                                opacity: isSelf ? 0.5 : 1,
-                              }}
-                            >
-                              <Text style={{ color: isSelected ? '#fff' : '#111827', fontWeight: '600' }}>{p.display_name}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
+                        {getParticipantOptions().map((p) => {
+                            const isSelected = mappingByAssassin[item.assassin_player_id] === p.player_id;
+                            const isSelf = p.player_id === item.assassin_player_id;
+                            return (
+                              <TouchableOpacity
+                                key={`${item.assassin_player_id}-${p.player_id}`}
+                                onPress={() => setTargetForAssassin(item.assassin_player_id, p.player_id)}
+                                disabled={isSelf}
+                                style={{
+                                  backgroundColor: isSelected ? '#1d4ed8' : '#f3f4f6',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 8,
+                                  borderRadius: 9999,
+                                  opacity: isSelf ? 0.5 : 1,
+                                }}
+                              >
+                                <Text style={{ color: isSelected ? '#fff' : '#111827', fontWeight: '600' }}>{p.display_name}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
                       </View>
                     </View>
                   )}
                 </TouchableOpacity>
+              )}
+              ListFooterComponent={(
+                <View style={{ gap: 8 }}>
+                  {ringEditMode && addedAssassinIds.length > 0 && (
+                    <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Targets for added players</Text>
+                      {addedAssassinIds.map((id) => {
+                        const name = getName(id);
+                        return (
+                          <View key={`added-assassin-${id}`} style={{ marginTop: 10 }}>
+                            <Text style={{ fontWeight: '700', marginBottom: 6 }}>Select target for {name}</Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                              {getParticipantOptions().map((p) => {
+                                  const isSelected = mappingByAssassin[id] === p.player_id;
+                                  const isSelf = p.player_id === id;
+                                  return (
+                                    <TouchableOpacity
+                                      key={`${id}-${p.player_id}`}
+                                      onPress={() => setTargetForAssassin(id, p.player_id)}
+                                      disabled={isSelf}
+                                      style={{
+                                        backgroundColor: isSelected ? '#1d4ed8' : '#f3f4f6',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 8,
+                                        borderRadius: 9999,
+                                        opacity: isSelf ? 0.5 : 1,
+                                      }}
+                                    >
+                                      <Text style={{ color: isSelected ? '#fff' : '#111827', fontWeight: '600' }}>{p.display_name}</Text>
+                                    </TouchableOpacity>
+                                  );
+                                })}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                  {showRing ? (
+                    <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, marginTop: 4 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Ring diagram</Text>
+                      <View style={{ marginTop: 8 }}>
+                        <RingVisualizer edges={edges} />
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
               )}
             />
           )}

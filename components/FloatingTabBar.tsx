@@ -68,27 +68,13 @@ export function FloatingTabBar({ state, descriptors, navigation }: Parameters<No
         accessibilityRole="button"
         accessibilityLabel="Back to groups"
         onPress={() => {
-          try {
-            // Prefer navigating back if there is history
-            if ((navigation as any)?.canGoBack?.()) {
-              (navigation as any).goBack();
-              return;
-            }
-          } catch {}
-          try {
-            router.back();
-            return;
-          } catch {}
+          // Always go to the app root index (app/index.tsx)
           try {
             router.replace('/');
-            return;
-          } catch {}
-          try {
-            router.dismissAll();
           } catch {}
         }}
       >
-        <Ionicons name="chevron-back" size={28} color="#fff" />
+        <Ionicons name="home" size={28} color="#fff" />
       </TouchableOpacity>
 
       <TouchableOpacity

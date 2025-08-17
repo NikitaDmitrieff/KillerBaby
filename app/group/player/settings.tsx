@@ -1,72 +1,77 @@
 import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../components/CollapsibleHeader';
-import { View, Text, Switch, ScrollView, RefreshControl, ActivityIndicator, FlatList, TouchableOpacity } from 'react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { View, Text, Switch, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { useEffect, useState } from 'react';
 import RoleToggle from '../role-toggle';
 import { useGroupsStore } from '../../../state/groups';
 import { supabase } from '../../../lib/supabase';
-import { useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
+import { COLORS } from '../../../theme/colors';
 
 export default function PlayerSettingsScreen() {
   const [notifications, setNotifications] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const router = useRouter();
   const { id: groupId, playerId } = useGroupsStore();
-  const [loading, setLoading] = useState(false);
-  const [conversations, setConversations] = useState<any[]>([]);
-  const [playerNames, setPlayerNames] = useState<Record<string, string>>({});
+  const [displayName, setDisplayName] = useState('');
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [savingName, setSavingName] = useState(false);
 
-  const canLoad = useMemo(() => Boolean(groupId && playerId), [groupId, playerId]);
-
-  async function loadConversations() {
-    if (!canLoad) return;
+  async function loadProfile() {
+    if (!playerId) return;
     try {
-      setLoading(true);
+      setLoadingProfile(true);
       const { data, error } = await supabase
-        .from('conversations')
-        .select('*')
-        .eq('group_id', groupId as string)
-        .eq('player_id', playerId as string)
-        .order('last_message_at', { ascending: false })
-        .limit(100);
+        .from('group_players')
+        .select('display_name')
+        .eq('id', playerId as string)
+        .maybeSingle();
       if (error) throw error;
-      const convos = Array.isArray(data) ? data : [];
-      setConversations(convos);
-
-      // fetch target names in batch
-      const targetIds = convos
-        .map((c: any) => c.target_player_id)
-        .filter((id: string | null) => Boolean(id)) as string[];
-      if (targetIds.length > 0) {
-        const { data: gp, error: gpErr } = await supabase
-          .from('group_players')
-          .select('id, display_name')
-          .in('id', targetIds);
-        if (!gpErr && Array.isArray(gp)) {
-          const map: Record<string, string> = {};
-          for (const row of gp) map[row.id as string] = row.display_name as string;
-          setPlayerNames(map);
-        }
-      } else {
-        setPlayerNames({});
-      }
+      setDisplayName((data?.display_name as string) || '');
     } catch (e) {
       // noop
     } finally {
-      setLoading(false);
+      setLoadingProfile(false);
     }
   }
 
   useEffect(() => {
-    loadConversations();
-  }, [groupId, playerId]);
+    loadProfile();
+  }, [playerId]);
 
   async function onRefresh() {
     setRefreshing(true);
     try {
-      await Promise.all([loadConversations()]);
+      await loadProfile();
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function onSaveDisplayName() {
+    const name = displayName.trim();
+    if (!playerId || name.length === 0 || savingName) return;
+    try {
+      setSavingName(true);
+      const { error } = await supabase
+        .from('group_players')
+        .update({ display_name: name })
+        .eq('id', playerId as string);
+      if (error) throw error;
+      Alert.alert('Saved', 'Your username has been updated.');
+    } catch (e: any) {
+      Alert.alert('Update failed', e?.message ?? 'Could not update username');
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  async function onCopyGroupId() {
+    if (!groupId) return;
+    try {
+      await Clipboard.setStringAsync(groupId);
+      Alert.alert('Copied', 'Group ID copied to clipboard.');
+    } catch (e) {
+      Alert.alert('Copy failed', 'Could not copy group ID.');
     }
   }
 
@@ -96,6 +101,55 @@ export default function PlayerSettingsScreen() {
             />
           }
         >
+          <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+            <Text style={{ fontWeight: '800', marginBottom: 8 }}>Profile</Text>
+            <View style={{ gap: 8 }}>
+              <Text style={{ fontWeight: '700' }}>Username</Text>
+              <TextInput
+                value={displayName}
+                onChangeText={setDisplayName}
+                placeholder={loadingProfile ? 'Loading...' : 'Enter a username'}
+                autoCapitalize="words"
+                style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}
+              />
+              <TouchableOpacity
+                onPress={onSaveDisplayName}
+                disabled={savingName || !displayName.trim()}
+                style={{
+                  backgroundColor: savingName || !displayName.trim() ? '#cbd5e1' : COLORS.brandPrimary,
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                }}
+              >
+                {savingName ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={{ color: '#fff', fontWeight: '800' }}>Save username</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ height: 16 }} />
+
+            <Text style={{ fontWeight: '700' }}>Invite friends</Text>
+            <Text style={{ color: '#6b7280', marginTop: 4 }}>Share this group ID for others to join:</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+              <View style={{ flex: 1, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
+                <Text numberOfLines={1} style={{ color: '#111827' }}>{groupId ?? '—'}</Text>
+              </View>
+              <View style={{ width: 8 }} />
+              <TouchableOpacity
+                onPress={onCopyGroupId}
+                disabled={!groupId}
+                style={{ backgroundColor: groupId ? COLORS.brandPrimary : '#cbd5e1', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12 }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '800' }}>Copy</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={{ fontWeight: '700' }}>Notifications</Text>
@@ -104,40 +158,6 @@ export default function PlayerSettingsScreen() {
             <Text style={{ color: '#6b7280', marginTop: 8 }}>Get updates when eliminations happen.</Text>
           </View>
 
-          <View style={{ marginTop: 16 }}>
-            <Text style={{ fontWeight: '800', marginBottom: 8 }}>Conversations</Text>
-            {loading ? (
-              <View style={{ paddingVertical: 12 }}>
-                <ActivityIndicator />
-              </View>
-            ) : conversations.length === 0 ? (
-              <Text style={{ color: '#6b7280' }}>No conversations yet.</Text>
-            ) : (
-              <FlatList
-                scrollEnabled={false}
-                data={conversations}
-                keyExtractor={(item) => String(item.id)}
-                renderItem={({ item }) => {
-                  const isAdmin = item.conversation_kind === 'PLAYER_ADMIN';
-                  const title = isAdmin ? 'Admin' : (playerNames[item.target_player_id] || 'Target');
-                  const when = item.last_message_at ? new Date(item.last_message_at).toLocaleString() : new Date(item.created_at).toLocaleString();
-                  return (
-                    <TouchableOpacity onPress={() => router.push(`/group/player/conversation/${item.id}`)}>
-                      <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#e5e7eb' }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                          <Text style={{ fontWeight: '800' }}>{title}</Text>
-                          <Text style={{ color: '#6b7280', fontSize: 12 }}>{when}</Text>
-                        </View>
-                        <Text style={{ color: '#6b7280', marginTop: 4, fontSize: 12 }}>
-                          {isAdmin ? 'You and the admin' : 'You and your target'}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-            )}
-          </View>
         </ScrollView>
       )}
     />

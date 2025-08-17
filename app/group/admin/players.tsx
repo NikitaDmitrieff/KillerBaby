@@ -4,11 +4,13 @@ import RoleToggle from '../role-toggle';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useGroupsStore } from '../../../state/groups';
+import { useRouter } from 'expo-router';
 
 type PlayerItem = { id: string; display_name: string; is_active: boolean };
 
 export default function AdminPlayersScreen() {
   const { id: groupId } = useGroupsStore();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [players, setPlayers] = useState<PlayerItem[]>([]);
@@ -18,6 +20,7 @@ export default function AdminPlayersScreen() {
   const [checkingIntegrity, setCheckingIntegrity] = useState(false);
   const [ringIsValid, setRingIsValid] = useState<boolean | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [openingChatPlayerId, setOpeningChatPlayerId] = useState<string | null>(null);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return players;
@@ -153,6 +156,49 @@ export default function AdminPlayersScreen() {
     }
   }
 
+  async function openOrCreateAdminConversation(playerId: string) {
+    if (!groupId) return;
+    try {
+      setOpeningChatPlayerId(playerId);
+      // Ensure we have the current admin profile id
+      let adminProfileId = userProfileId;
+      if (!adminProfileId) {
+        const { data } = await supabase.auth.getUser();
+        adminProfileId = data?.user?.id ?? null;
+        if (adminProfileId) setUserProfileId(adminProfileId);
+      }
+      if (!adminProfileId) {
+        throw new Error('Missing admin profile. Please re-login and try again.');
+      }
+      // Try to find existing admin conversation with this player
+      const { data: existing, error: findErr } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('group_id', groupId)
+        .eq('player_id', playerId)
+        .eq('conversation_kind', 'PLAYER_ADMIN')
+        .maybeSingle();
+      if (findErr) throw findErr;
+      let conversationId = (existing as any)?.id as number | undefined;
+      if (!conversationId) {
+        const { data: inserted, error: insertErr } = await supabase
+          .from('conversations')
+          .insert({ group_id: groupId, player_id: playerId, conversation_kind: 'PLAYER_ADMIN', admin_profile_id: adminProfileId })
+          .select('id')
+          .single();
+        if (insertErr) throw insertErr;
+        conversationId = (inserted as any)?.id as number;
+      }
+      if (conversationId) {
+        router.push(`/group/admin/conversation/${conversationId}`);
+      }
+    } catch (e: any) {
+      Alert.alert('Could not open chat', e?.message ?? 'Failed to open conversation');
+    } finally {
+      setOpeningChatPlayerId(null);
+    }
+  }
+
   async function onRefresh() {
     setRefreshing(true);
     try {
@@ -257,6 +303,13 @@ export default function AdminPlayersScreen() {
                         <Text style={{ color: '#fff', fontWeight: '700' }}>Restore</Text>
                       </TouchableOpacity>
                     )}
+                    <TouchableOpacity
+                      onPress={() => openOrCreateAdminConversation(item.id)}
+                      disabled={openingChatPlayerId === item.id}
+                      style={{ backgroundColor: '#111827', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, opacity: openingChatPlayerId === item.id ? 0.6 : 1 }}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '700' }}>Message</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               )}

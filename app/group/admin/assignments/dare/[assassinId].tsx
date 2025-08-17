@@ -1,10 +1,9 @@
-import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../../../components/CollapsibleHeader';
 import { View, Text, TouchableOpacity, ActivityIndicator, Alert, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import RoleToggle from '../../../role-toggle';
 import { useEffect, useMemo, useState } from 'react';
 import { useGroupsStore } from '../../../../../state/groups';
 import { supabase } from '../../../../../lib/supabase';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function getInitials(name: string | undefined | null) {
   const safe = (name ?? '').trim();
@@ -38,6 +37,7 @@ export default function DareDetailsScreen() {
   const router = useRouter();
   const { assassinId } = useLocalSearchParams<{ assassinId: string }>();
   const { id: groupId } = useGroupsStore();
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [assassinName, setAssassinName] = useState('');
@@ -96,57 +96,68 @@ export default function DareDetailsScreen() {
   }
 
   return (
-    <CollapsibleHeader
-      title={"Dare"}
-      subtitle={"Edit dare details"}
-      renderRightAccessory={({ collapseProgress }) => (
-        <CollapsibleHeaderAccessory collapseProgress={collapseProgress}>
-          <RoleToggle />
-        </CollapsibleHeaderAccessory>
-      )}
-      renderContent={({ contentInsetTop }) => (
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-          {loading ? (
-            <View style={{ paddingTop: contentInsetTop, paddingHorizontal: 16 }}>
-              <ActivityIndicator />
-            </View>
-          ) : (
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: contentInsetTop, paddingHorizontal: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-              <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16, marginBottom: 12 }}>
-                <Text style={{ fontWeight: '800', marginBottom: 10 }}>Participants</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <Avatar name={assassinName} />
-                  <Text style={{ fontWeight: '700' }}>{assassinName}</Text>
-                  <Text>→</Text>
-                  <Avatar name={targetName} />
-                  <Text style={{ fontWeight: '700' }}>{targetName}</Text>
-                </View>
-              </View>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
+        <View
+          style={{
+            paddingTop: insets.top,
+            paddingHorizontal: 16,
+            paddingBottom: 12,
+            borderBottomWidth: 1,
+            borderColor: '#e5e7eb',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Text numberOfLines={1} style={{ fontSize: 20, fontWeight: '800', color: '#111827', flex: 1, paddingRight: 16 }}>
+            {assassinName ? `${assassinName}'s Dare` : 'Dare'}
+          </Text>
+          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+            <Text style={{ fontSize: 20, color: '#111827' }}>✕</Text>
+          </TouchableOpacity>
+        </View>
 
-              <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 16, marginBottom: 12 }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Dare text</Text>
-                <TextInput
-                  value={dareText}
-                  onChangeText={setDareText}
-                  placeholder="Enter dare"
-                  multiline
-                  textAlignVertical="top"
-                  style={{ backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12, minHeight: 140, marginTop: 8 }}
-                />
-                <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
-                  <TouchableOpacity onPress={() => router.back()} style={{ backgroundColor: '#e5e7eb', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10 }}>
-                    <Text style={{ color: '#111827', fontWeight: '700' }}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={save} disabled={saving} style={{ backgroundColor: '#059669', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10, opacity: saving ? 0.8 : 1 }}>
-                    {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#ffffff', fontWeight: '800' }}>Save</Text>}
-                  </TouchableOpacity>
-                </View>
+        {loading ? (
+          <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
+            <ActivityIndicator />
+          </View>
+        ) : (
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+            <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16, marginBottom: 12 }}>
+              <Text style={{ fontWeight: '800', marginBottom: 10 }}>Participants</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Avatar name={assassinName} />
+                <Text style={{ fontWeight: '700' }}>{assassinName}</Text>
+                <Text>→</Text>
+                <Avatar name={targetName} />
+                <Text style={{ fontWeight: '700' }}>{targetName}</Text>
               </View>
-            </ScrollView>
-          )}
-        </KeyboardAvoidingView>
-      )}
-    />
+            </View>
+
+            <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 16, marginBottom: 12 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b7280' }}>Dare text</Text>
+              <TextInput
+                value={dareText}
+                onChangeText={setDareText}
+                placeholder="Enter dare"
+                multiline
+                textAlignVertical="top"
+                style={{ backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12, minHeight: 140, marginTop: 8 }}
+              />
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+                <TouchableOpacity onPress={() => router.back()} style={{ backgroundColor: '#e5e7eb', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10 }}>
+                  <Text style={{ color: '#111827', fontWeight: '700' }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={save} disabled={saving} style={{ backgroundColor: '#059669', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10, opacity: saving ? 0.8 : 1 }}>
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#ffffff', fontWeight: '800' }}>Save</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        )}
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
