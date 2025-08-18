@@ -15,7 +15,7 @@
     "@react-native-segmented-control/segmented-control": "^2.5.7",
     "@supabase/supabase-js": "^2.55.0",
     "expo": "~53.0.20",
-    "expo-clipboard": "^6.0.3",
+    "expo-clipboard": "~7.1.5",
     "expo-linear-gradient": "~14.1.5",
     "expo-linking": "~7.1.7",
     "expo-router": "~5.1.4",
