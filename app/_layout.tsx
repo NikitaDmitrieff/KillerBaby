@@ -1,5 +1,6 @@
 import { Slot, Stack, useRouter, useSegments } from 'expo-router';
 import { View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useEffect, useRef, useState } from 'react';
 import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
@@ -100,24 +101,26 @@ export default function RootLayout() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="welcome" options={{ presentation: 'card' }} />
-        <Stack.Screen
-          name="index"
-          options={{
-            presentation: 'card',
-            animation: 'slide_from_left',
-            animationTypeForReplace: 'pop',
-          }}
-        />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="group" />
-        <Stack.Screen name="bet/[id]" options={{ presentation: 'card' }} />
-        <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="player/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      </Stack>
-    </View>
+    <SafeAreaProvider>
+      <View style={{ flex: 1, backgroundColor: '#fff' }}>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="welcome" options={{ presentation: 'card' }} />
+          <Stack.Screen
+            name="index"
+            options={{
+              presentation: 'card',
+              animation: 'slide_from_left',
+              animationTypeForReplace: 'pop',
+            }}
+          />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="group" />
+          <Stack.Screen name="bet/[id]" options={{ presentation: 'card' }} />
+          <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="player/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        </Stack>
+      </View>
+    </SafeAreaProvider>
   );
 }
 

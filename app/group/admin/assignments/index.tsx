@@ -504,15 +504,58 @@ export default function AdminAssignmentsScreen() {
                     />
                   </View>
 
-                  {/* Ring diagram — plain, no card */}
+                  {/* Ring diagram or top-level empty state */}
                   {currentTab === 'Ring' && (
-                    <View style={{ marginTop: 4 }}>
-                      <RingVisualizer edges={edges} />
-                    </View>
+                    edges.length === 0 ? (
+                      <View
+                        style={{
+                          backgroundColor: '#FFFFFF',
+                          borderWidth: 1,
+                          borderColor: '#E5E7EB',
+                          borderRadius: 12,
+                          padding: 12,
+                          shadowColor: '#000',
+                          shadowOpacity: 0.04,
+                          shadowRadius: 8,
+                          shadowOffset: { width: 0, height: 4 },
+                        }}
+                      >
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: '#111827' }}>No ring yet</Text>
+                        <Text style={{ marginTop: 6, color: '#6B7280' }}>
+                          Generate a ring to connect players in a single cycle.
+                        </Text>
+                        <TouchableOpacity
+                          onPress={handleSeed}
+                          disabled={seeding}
+                          style={{
+                            marginTop: 10,
+                            backgroundColor: seeding ? '#CBD5E1' : COLORS.brandPrimary,
+                            paddingHorizontal: 14,
+                            paddingVertical: 10,
+                            borderRadius: 12,
+                            shadowColor: '#000',
+                            shadowOpacity: 0.06,
+                            shadowRadius: 6,
+                            shadowOffset: { width: 0, height: 3 },
+                            elevation: 2,
+                          }}
+                        >
+                          {seeding ? (
+                            <ActivityIndicator color="#fff" />
+                          ) : (
+                            <Text style={{ color: '#fff', fontWeight: '800' }}>Generate ring & dares</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View style={{ marginTop: 4 }}>
+                        <RingVisualizer edges={edges} />
+                      </View>
+                    )
                   )}
 
                   {/* Ring controls */}
-                  {currentTab === 'Ring' && (
+                  {currentTab === 'Ring' && edges.length > 0 && (
                     <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
                       <TouchableOpacity
                         onPress={handleSeed}
@@ -673,36 +716,7 @@ export default function AdminAssignmentsScreen() {
               )}
               ListEmptyComponent={(
                 <View style={{ paddingVertical: 40, alignItems: 'center', gap: 8 }}>
-                  {currentTab === 'Ring' ? (
-                    <>
-                      <Text style={{ fontSize: 18, fontWeight: '800', color: '#111827' }}>No ring yet</Text>
-                      <Text style={{ color: '#6B7280', textAlign: 'center' }}>
-                        Generate a ring to connect players in a single cycle.
-                      </Text>
-                      <TouchableOpacity
-                        onPress={handleSeed}
-                        disabled={seeding}
-                        style={{
-                          marginTop: 10,
-                          backgroundColor: seeding ? '#CBD5E1' : COLORS.brandPrimary,
-                          paddingHorizontal: 14,
-                          paddingVertical: 10,
-                          borderRadius: 12,
-                          shadowColor: '#000',
-                          shadowOpacity: 0.06,
-                          shadowRadius: 6,
-                          shadowOffset: { width: 0, height: 3 },
-                          elevation: 2,
-                        }}
-                      >
-                        {seeding ? (
-                          <ActivityIndicator color="#fff" />
-                        ) : (
-                          <Text style={{ color: '#fff', fontWeight: '800' }}>Generate ring & dares</Text>
-                        )}
-                      </TouchableOpacity>
-                    </>
-                  ) : (
+                  {currentTab === 'Dares' ? (
                     <>
                       <Text style={{ fontSize: 18, fontWeight: '800', color: '#111827' }}>No dares yet</Text>
                       <Text style={{ color: '#6B7280', textAlign: 'center' }}>
@@ -731,7 +745,7 @@ export default function AdminAssignmentsScreen() {
                         )}
                       </TouchableOpacity>
                     </>
-                  )}
+                  ) : null}
                 </View>
               )}
               ListFooterComponent={(

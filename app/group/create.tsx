@@ -90,87 +90,126 @@ export default function GroupCreateScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'position' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 17 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
-        <Text style={{ fontSize: 24, fontWeight: '800' }}>Create group</Text>
-
-        <View style={{ gap: 8 }}>
-          <Text style={{ fontWeight: '700' }}>Name</Text>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            placeholder="Poker nights"
-            style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}
-          />
-        </View>
-
-        <View style={{ gap: 8 }}>
-          <Text style={{ fontWeight: '700' }}>Description (optional)</Text>
-          <TextInput
-            value={description}
-            onChangeText={setDescription}
-            placeholder="A private group for our weekly games"
-            style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}
-          />
-        </View>
-
-        <View style={{ gap: 8 }}>
-          <Text style={{ fontWeight: '700' }}>Deadline (optional)</Text>
-          <DateTimeField
-            label="Deadline"
-            value={deadlineLocal ?? undefined}
-            onChange={(d) => setDeadlineLocal(d)}
-            minuteInterval={5}
-            minimumDate={new Date()}
-            onReset={() => setDeadlineLocal(new Date(Date.now() + 48 * 60 * 60 * 1000))}
-            resetLabel="Reset to +48h"
-          />
-          <Text style={{ color: '#6b7280', fontSize: 12 }}>Defaults to 48 hours from now.</Text>
-        </View>
-
-        <View style={{ backgroundColor: '#f7f7fb', padding: 16, borderRadius: 16 }}>
-          <Text style={{ fontWeight: '700', marginBottom: 8 }}>Add players by name (optional)</Text>
-          {guests.length === 0 ? (
-            <Text style={{ color: '#6b7280' }}>No names added</Text>
-          ) : (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {guests.map((n) => (
-                <View key={n} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef2ff', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 }}>
-                  <Text style={{ fontWeight: '600' }}>{n}</Text>
-                  <TouchableOpacity onPress={() => removeGuest(n)} style={{ marginLeft: 8 }}>
-                    <Text style={{ color: '#6b7280' }}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          )}
-
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-            <TextInput
-              value={guestName}
-              onChangeText={setGuestName}
-              placeholder="Add a player name"
-              style={{ flex: 1, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 }}
-            />
-            <TouchableOpacity onPress={addGuest} style={{ backgroundColor: '#e5e7eb', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 }}>
-              <Text style={{ fontWeight: '700' }}>Add</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          disabled={!canSubmit || submitting}
-          onPress={onSubmit}
-          style={{ backgroundColor: canSubmit && !submitting ? COLORS.brandPrimary : '#cbd5e1', padding: 16, borderRadius: 14, alignItems: 'center' }}
+        <ScrollView
+          contentContainerStyle={{ padding: 16, gap: 17, paddingBottom: 32 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
         >
-          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Create</Text>}
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 8, padding: 12, borderRadius: 12, alignItems: 'center', backgroundColor: '#f3f4f6' }}>
-          <Text style={{ fontWeight: '600' }}>Cancel</Text>
-        </TouchableOpacity>
+          <Text style={{ fontSize: 24, fontWeight: '800' }}>Create group</Text>
+  
+          <View style={{ gap: 8 }}>
+            <Text style={{ fontWeight: '700' }}>Name</Text>
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="Poker nights"
+              style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}
+            />
+          </View>
+  
+          <View style={{ gap: 8 }}>
+            <Text style={{ fontWeight: '700' }}>Description (optional)</Text>
+            <TextInput
+              value={description}
+              onChangeText={setDescription}
+              placeholder="A private group for our weekly games"
+              style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12 }}
+            />
+          </View>
+  
+          <View style={{ gap: 8 }}>
+            <Text style={{ fontWeight: '700' }}>Deadline (optional)</Text>
+            <DateTimeField
+              label="Deadline"
+              value={deadlineLocal ?? undefined}
+              onChange={(d) => setDeadlineLocal(d)}
+              minuteInterval={5}
+              minimumDate={new Date()}
+              onReset={() => setDeadlineLocal(new Date(Date.now() + 48 * 60 * 60 * 1000))}
+              resetLabel="Reset to +48h"
+            />
+            <Text style={{ color: '#6b7280', fontSize: 12 }}>Defaults to 48 hours from now.</Text>
+          </View>
+  
+          <View style={{ backgroundColor: '#f7f7fb', padding: 16, borderRadius: 16 }}>
+            <Text style={{ fontWeight: '700', marginBottom: 8 }}>Add players by name (optional)</Text>
+            {guests.length === 0 ? (
+              <Text style={{ color: '#6b7280' }}>No names added</Text>
+            ) : (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {guests.map((n) => (
+                  <View
+                    key={n}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: '#eef2ff',
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                    }}
+                  >
+                    <Text style={{ fontWeight: '600' }}>{n}</Text>
+                    <TouchableOpacity onPress={() => removeGuest(n)} style={{ marginLeft: 8 }}>
+                      <Text style={{ color: '#6b7280' }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+  
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+              <TextInput
+                value={guestName}
+                onChangeText={setGuestName}
+                placeholder="Add a player name"
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: '#e5e7eb',
+                  borderRadius: 10,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                }}
+                returnKeyType="done"
+                onSubmitEditing={addGuest}
+              />
+              <TouchableOpacity
+                onPress={addGuest}
+                style={{ backgroundColor: '#e5e7eb', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 }}
+              >
+                <Text style={{ fontWeight: '700' }}>Add</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+  
+          <TouchableOpacity
+            disabled={!canSubmit || submitting}
+            onPress={onSubmit}
+            style={{
+              backgroundColor: canSubmit && !submitting ? COLORS.brandPrimary : '#cbd5e1',
+              padding: 16,
+              borderRadius: 14,
+              alignItems: 'center',
+            }}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Create</Text>
+            )}
+          </TouchableOpacity>
+  
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{ marginTop: 8, padding: 12, borderRadius: 12, alignItems: 'center', backgroundColor: '#f3f4f6' }}
+          >
+            <Text style={{ fontWeight: '600' }}>Cancel</Text>
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
