@@ -89,9 +89,7 @@ export default function DareDetailsScreen() {
         setTemplatesLoading(true);
         const { data, error } = await supabase
           .from('dare_templates')
-          .select('id, text, difficulty, tags')
-          .eq('group_id', groupId)
-          .eq('is_active', true);
+          .select('id, text, difficulty, tags');
         if (error) throw error;
         const difficultyOrder: Record<string, number> = { EASY: 0, INTERMEDIATE: 1, HARD: 2 };
         const rows = (data as any[] | null) ?? [];
@@ -191,7 +189,7 @@ export default function DareDetailsScreen() {
               />
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
                 {(["ALL", "EASY", "INTERMEDIATE", "HARD", "HUMAN"] as const).map((opt) => {
-                  const label = opt === 'ALL' ? 'All' : opt === 'EASY' ? 'Easy' : opt === 'INTERMEDIATE' ? 'Intermediate' : opt === 'HARD' ? 'Hard' : 'Human';
+                  const label = opt === 'ALL' ? 'All' : opt === 'EASY' ? 'Easy' : opt === 'INTERMEDIATE' ? 'Intermediate' : opt === 'HARD' ? 'Hard' : 'Human-generated';
                   const isSelected = opt === 'ALL' ? selectedFilters.length === 0 : selectedFilters.includes(opt);
                   return (
                     <TouchableOpacity

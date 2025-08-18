@@ -63,6 +63,7 @@
 - 2025-08-18: Added `groups.short_code` (TEXT, 4 chars A–Z2–9), unique with generator and trigger. Backfilled existing groups and set NOT NULL. Frontend: join accepts 4-char codes or UUID; player settings shows copyable invite code.
 - 2025-08-18: Added RPC `delete_group_cascade(p_group_id, p_admin_profile_id)` to transactionally delete a group and all dependent rows. Authorization: only `groups.created_by` may delete.
 - 2025-08-18: Added `dare_tag` value `Human` and backfilled 21 new dare templates across all existing groups tagged `Human` with curated difficulties (idempotent on `lower(text)` per group).
+- 2025-08-18: Migrated `dare_templates` to GLOBAL templates (no per-group rows). Removed trigger-based auto-seeding, deduplicated rows on canonical text, and dropped `group_id`, `created_by_profile_id`, and `is_active` columns. Added unique index on `lower(btrim(text))`.
 - 2025-08-17: Added `messages` table, enums `message_kind`, `message_tag`, indexes, and trigger for admin routing.
 - 2025-08-17: Seeded default `dare_templates` for all existing groups and added an insert trigger so new groups auto-populate ~44 default dares. Idempotent seeding avoids duplicates by matching on lowercase `text` per `group_id`.
 - 2025-08-17: Implemented elimination flow: `eliminate_player(p_group_id, p_assassin_player_id, p_created_by_profile_id)` closes the assassin's and victim's active edges (`reason_closed='kill'`, `closed_at=now()`), inserts a new edge that rewires to the victim's target and carries forward the dare, and sets `replaced_by_assignment_id` on the two closed rows.
@@ -76,9 +77,9 @@
 
 - Purpose: give admins a starting set to pick/propose as seed dares when starting a game.
 - Population:
-  - One-time backfill: inserted 44 defaults for every existing `groups.id`, authored by `groups.created_by`.
-  - Ongoing: a trigger `trg_seed_dare_templates_after_group_insert` calls `seed_default_dare_templates(new.id, new.created_by)` to auto-insert the same set for each new group.
-- Idempotency: insertion skips any `dare_templates` row where `lower(text)` already exists for the `group_id`.
+  - One-time backfill: historically we inserted 44 defaults per group.
+  - Ongoing: removed. Templates are now global. No per-group seeding occurs.
+  - Idempotency: enforced globally via unique index on `lower(btrim(text))`.
 
 ### Enums (dare)
 
@@ -102,46 +103,26 @@
   - "Hold the door and say \"After you, agent.\""
   - "Say \"Enhance!\" while looking at your screen."
 
-### How to add a new dare template
+### How to add a new dare template (global)
 
 - Purpose: expand the pool of reusable prompts that admins can use when seeding a game.
 - Guidelines: keep prompts short, safe-for-work, and broadly applicable.
 
-- Add for a single group (idempotent by lower(text)):
+- Add a single global template:
 
 ```sql
-insert into public.dare_templates (group_id, text, difficulty, tags, is_active, created_by_profile_id)
-select $1::uuid, $2::text, coalesce($3::public.dare_difficulty, 'EASY'), coalesce($4::public.dare_tag[], '{}'), true, (select created_by from public.groups where id = $1)
-where not exists (
-  select 1 from public.dare_templates t
-  where t.group_id = $1 and lower(t.text) = lower($2)
-);
-```
-
-- Add for all existing groups (idempotent across groups):
-
-```sql
-insert into public.dare_templates (group_id, text, difficulty, tags, is_active, created_by_profile_id)
-select g.id, $1::text as text, coalesce($2::public.dare_difficulty, 'EASY'), coalesce($3::public.dare_tag[], '{}'), true, g.created_by
-from public.groups g
-where not exists (
-  select 1 from public.dare_templates t
-  where t.group_id = g.id and lower(t.text) = lower($1)
-);
+insert into public.dare_templates (text, difficulty, tags)
+values ($1::text, coalesce($2::public.dare_difficulty, 'EASY'), coalesce($3::public.dare_tag[], '{}'))
+on conflict ((lower(btrim(text)))) do nothing;
 ```
 
 - Verify:
 
 ```sql
-select count(*) from public.dare_templates where lower(text) = lower($1);
+select count(*) from public.dare_templates where lower(btrim(text)) = lower(btrim($1));
 ```
 
-- Note: new groups are auto-seeded by `seed_default_dare_templates(...)`. To include a new phrase in future auto-seeding, update the backend seed function in addition to backfilling existing groups.
-
-### Backfill (2025-08-17)
-
-- Inserted 74 additional templates with curated `difficulty` and `tags` across all existing groups (idempotent on `lower(text)` per group).
-- Existing templates without explicit difficulty/tags continue to work with defaults: `difficulty='EASY'`, `tags='{}'`.
+- Note: there is no auto-seeding. Consumers query `dare_templates` directly without filtering by group.
 
 ### Table: `conversations`
 - Shape checks:

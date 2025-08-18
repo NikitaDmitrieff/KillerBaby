@@ -296,9 +296,7 @@ export default function AdminAssignmentsScreen() {
       const targets = ids.slice(1).concat(ids.slice(0, 1));
       const { data: tmplRows, error: tmplErr } = await supabase
         .from('dare_templates')
-        .select('text')
-        .eq('group_id', groupId)
-        .eq('is_active', true);
+        .select('text');
       if (tmplErr) throw tmplErr;
       const templates: string[] = ((tmplRows as any[]) ?? [])
         .map((r) => (r?.text as string) || '')

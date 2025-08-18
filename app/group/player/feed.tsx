@@ -69,10 +69,10 @@ export default function PlayerFeedScreen() {
           .limit(50),
         supabase
           .from('assignments')
-          .select('id, dare_text, created_at, closed_at, reason_closed, replaced_by_assignment_id, assassin:assassin_player_id(id, display_name), target:target_player_id(id, display_name)')
+          .select('id, dare_text, created_at, closed_at, reason_closed, replaced_by_assignment_id, assassin:assassin_player_id(id, display_name), target:target_player_id(id, display_name, is_dead)')
           .eq('group_id', groupId)
           .not('closed_at', 'is', null)
-          .neq('reason_closed', 'reseed')
+          .eq('reason_closed', 'kill')
           .order('closed_at', { ascending: false })
           .limit(50),
         supabase
@@ -93,12 +93,12 @@ export default function PlayerFeedScreen() {
       }));
 
       const elimItems: FeedItem[] = (aRows ?? [])
-        .filter((r: any) => !!r.closed_at && r.reason_closed !== 'reseed')
+        .filter((r: any) => !!r.closed_at && r.reason_closed === 'kill' && ((Array.isArray(r.target) ? r.target[0]?.is_dead : r.target?.is_dead) === true))
         .map((r: any) => ({
           id: r.id,
           ts: r.closed_at as string,
           kind: 'elimination' as const,
-          text: `${r.assassin?.display_name ?? 'Someone'} eliminated ${r.target?.display_name ?? 'someone'} with “${r.dare_text ?? 'a dare'}”`,
+          text: `${(Array.isArray(r.assassin) ? r.assassin[0]?.display_name : r.assassin?.display_name) ?? 'Someone'} eliminated ${(Array.isArray(r.target) ? r.target[0]?.display_name : r.target?.display_name) ?? 'someone'} with “${r.dare_text ?? 'a dare'}”`,
         }));
 
       const metaItems: FeedItem[] = [];
@@ -133,7 +133,7 @@ export default function PlayerFeedScreen() {
             .eq('group_id', groupId)
             .eq('assassin_player_id', playerId)
             .not('closed_at', 'is', null)
-            .neq('reason_closed', 'reseed')
+            .eq('reason_closed', 'kill')
         );
       }
       tasks.push(
@@ -142,7 +142,7 @@ export default function PlayerFeedScreen() {
           .select('id', { count: 'exact', head: true })
           .eq('group_id', groupId)
           .not('closed_at', 'is', null)
-          .neq('reason_closed', 'reseed')
+          .eq('reason_closed', 'kill')
       );
 
       const results = await Promise.all(tasks);
@@ -217,15 +217,20 @@ export default function PlayerFeedScreen() {
         async (payload) => {
           const row: any = payload.new;
           if (!row.closed_at) return;
-          if (row.reason_closed === 'reseed') return;
+          if (row.reason_closed !== 'kill') return;
           try {
             const { data, error } = await supabase
               .from('assignments')
-              .select('id, closed_at, reason_closed, dare_text, assassin:assassin_player_id(display_name), target:target_player_id(display_name)')
+              .select('id, closed_at, reason_closed, dare_text, assassin:assassin_player_id(display_name), target:target_player_id(display_name, is_dead)')
               .eq('id', row.id)
               .maybeSingle();
             if (error || !data) return;
-            if ((data as any).reason_closed === 'reseed') return;
+            if ((data as any).reason_closed !== 'kill') return;
+            const targetDead = (() => {
+              const t: any = (data as any).target;
+              return (Array.isArray(t) ? t[0]?.is_dead : t?.is_dead) === true;
+            })();
+            if (!targetDead) return;
             const extractName = (x: any): string | undefined => {
               if (!x) return undefined;
               return Array.isArray(x) ? x[0]?.display_name : x.display_name;
