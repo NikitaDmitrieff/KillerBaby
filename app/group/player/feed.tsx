@@ -1,7 +1,6 @@
-import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../components/CollapsibleHeader';
+import CollapsibleHeader from '../../../components/CollapsibleHeader';
 import { View, Text, FlatList, ActivityIndicator, RefreshControl, StyleSheet } from 'react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import RoleToggle from '../role-toggle';
 import { supabase } from '../../../lib/supabase';
 import { useGroupsStore } from '../../../state/groups';
 import { COLORS } from '../../../theme/colors';
@@ -303,11 +302,6 @@ export default function PlayerFeedScreen() {
       title={title}
       subtitle={subtitle}
       isRefreshing={refreshing}
-      renderRightAccessory={({ collapseProgress }) => (
-        <CollapsibleHeaderAccessory collapseProgress={collapseProgress}>
-          <RoleToggle />
-        </CollapsibleHeaderAccessory>
-      )}
       renderContent={({ contentInsetTop, onScroll, scrollRef }) => (
         <View style={{ flex: 1 }}>
           {!groupId ? (

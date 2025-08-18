@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { COLORS } from '../../theme/colors';
@@ -88,7 +88,12 @@ export default function GroupCreateScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'position' : undefined}
+        keyboardVerticalOffset={0}
+      >
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 17 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
         <Text style={{ fontSize: 24, fontWeight: '800' }}>Create group</Text>
 
         <View style={{ gap: 8 }}>
@@ -119,22 +124,10 @@ export default function GroupCreateScreen() {
             onChange={(d) => setDeadlineLocal(d)}
             minuteInterval={5}
             minimumDate={new Date()}
+            onReset={() => setDeadlineLocal(new Date(Date.now() + 48 * 60 * 60 * 1000))}
+            resetLabel="Reset to +48h"
           />
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity
-              onPress={() => setDeadlineLocal(new Date(Date.now() + 48 * 60 * 60 * 1000))}
-              style={{ paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: '#eef2ff', alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Text style={{ color: '#1f2937', fontWeight: '700' }}>Reset to +48h</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setDeadlineLocal(null)}
-              style={{ paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Text style={{ color: '#6b7280', fontWeight: '700' }}>Clear</Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={{ color: '#6b7280', fontSize: 12 }}>Defaults to 48 hours from now. Clear to skip.</Text>
+          <Text style={{ color: '#6b7280', fontSize: 12 }}>Defaults to 48 hours from now.</Text>
         </View>
 
         <View style={{ backgroundColor: '#f7f7fb', padding: 16, borderRadius: 16 }}>
@@ -178,7 +171,8 @@ export default function GroupCreateScreen() {
         <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 8, padding: 12, borderRadius: 12, alignItems: 'center', backgroundColor: '#f3f4f6' }}>
           <Text style={{ fontWeight: '600' }}>Cancel</Text>
         </TouchableOpacity>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

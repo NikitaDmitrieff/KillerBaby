@@ -1,8 +1,7 @@
-import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../../components/CollapsibleHeader';
+import CollapsibleHeader from '../../../../components/CollapsibleHeader';
 import { View, Text, ActivityIndicator, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import RoleToggle from '../../role-toggle';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../../../lib/supabase';
 import { useGroupsStore } from '../../../../state/groups';
@@ -122,7 +121,9 @@ export default function AdminConversationScreen() {
         }
       )
       .subscribe();
-    return () => ch.unsubscribe();
+    return () => {
+      ch.unsubscribe();
+    };
   }, [conversationId, profileId]);
 
   async function onRefresh() {
@@ -190,17 +191,20 @@ export default function AdminConversationScreen() {
       title={playerName ? `Chat with ${playerName}` : 'Chat with Player'}
       subtitle={'Conversation'}
       isRefreshing={refreshing}
-      renderRightAccessory={({ collapseProgress }) => (
-        <CollapsibleHeaderAccessory collapseProgress={collapseProgress}>
-          <RoleToggle />
-        </CollapsibleHeaderAccessory>
-      )}
       renderContent={({ contentInsetTop, onScroll, scrollRef }) => (
         <View style={{ flex: 1 }}>
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Back to inbox"
-            onPress={() => router.replace('/group/admin/conversation')}
+            onPress={() => {
+              try {
+                if ((router as any).canGoBack?.()) {
+                  (router as any).back();
+                  return;
+                }
+              } catch {}
+              router.replace('/group/admin/conversation');
+            }}
             style={[
               styles.backBtn,
               { top: contentInsetTop + 8 },

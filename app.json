@@ -13,7 +13,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nikitadmitrieff.KillerBaby",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -34,7 +38,17 @@
     },
     "extra": {
       "EXPO_PUBLIC_SUPABASE_URL": "https://ybfbljzvozsbwfqaieui.supabase.co",
-      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliZmJsanp2b3pzYndmcWFpZXVpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUzNjAwNjIsImV4cCI6MjA3MDkzNjA2Mn0.HrWtIqYSQPpRpwaqWyHDxfjwEv6ZnBtZb9qa4tCMKcM"
+      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliZmJsanp2b3pzYndmcWFpZXVpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUzNjAwNjIsImV4cCI6MjA3MDkzNjA2Mn0.HrWtIqYSQPpRpwaqWyHDxfjwEv6ZnBtZb9qa4tCMKcM",
+      "router": {},
+      "eas": {
+        "projectId": "a4304040-a692-4863-a818-979d531847d1"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a4304040-a692-4863-a818-979d531847d1"
     }
   }
 }

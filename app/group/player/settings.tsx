@@ -1,19 +1,21 @@
-import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../components/CollapsibleHeader';
+import CollapsibleHeader from '../../../components/CollapsibleHeader';
 import { View, Text, Switch, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { useEffect, useState } from 'react';
-import RoleToggle from '../role-toggle';
 import { useGroupsStore } from '../../../state/groups';
 import { supabase } from '../../../lib/supabase';
 import { COLORS } from '../../../theme/colors';
+import * as Clipboard from 'expo-clipboard';
 
 export default function PlayerSettingsScreen() {
   const [notifications, setNotifications] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const { playerId } = useGroupsStore();
+  const { playerId, id: groupId } = useGroupsStore();
   const [displayName, setDisplayName] = useState('');
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [savingName, setSavingName] = useState(false);
+  const [groupCode, setGroupCode] = useState<string | null>(null);
+  const [loadingGroup, setLoadingGroup] = useState(false);
 
   async function loadProfile() {
     if (!playerId) return;
@@ -36,6 +38,28 @@ export default function PlayerSettingsScreen() {
   useEffect(() => {
     loadProfile();
   }, [playerId]);
+
+  async function loadGroupCode() {
+    if (!groupId) return;
+    try {
+      setLoadingGroup(true);
+      const { data, error } = await supabase
+        .from('groups')
+        .select('short_code')
+        .eq('id', groupId as string)
+        .maybeSingle();
+      if (error) throw error;
+      setGroupCode((data?.short_code as string) ?? null);
+    } catch (e) {
+      // noop
+    } finally {
+      setLoadingGroup(false);
+    }
+  }
+
+  useEffect(() => {
+    loadGroupCode();
+  }, [groupId]);
 
   async function onRefresh() {
     setRefreshing(true);
@@ -71,11 +95,6 @@ export default function PlayerSettingsScreen() {
       title={"Settings"}
       subtitle={"Player preferences"}
       isRefreshing={refreshing}
-      renderRightAccessory={({ collapseProgress }) => (
-        <CollapsibleHeaderAccessory collapseProgress={collapseProgress}>
-          <RoleToggle />
-        </CollapsibleHeaderAccessory>
-      )}
       renderContent={({ contentInsetTop, onScroll, scrollRef }) => (
         <ScrollView
           ref={scrollRef as any}
@@ -131,6 +150,41 @@ export default function PlayerSettingsScreen() {
               <Switch value={notifications} onValueChange={setNotifications} />
             </View>
             <Text style={{ color: '#6b7280', marginTop: 8 }}>Get updates when eliminations happen.</Text>
+          </View>
+
+          <View style={{ backgroundColor: '#f9f9fb', borderRadius: 12, padding: 16, marginTop: 16 }}>
+            <Text style={{ fontWeight: '800', marginBottom: 8 }}>Invite</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#6b7280' }}>Share this code to let others join your group.</Text>
+              </View>
+              <View style={{ minWidth: 120, alignItems: 'flex-end' }}>
+                {loadingGroup ? (
+                  <ActivityIndicator />
+                ) : (
+                  <Text style={{ fontWeight: '900', fontSize: 28, letterSpacing: 2 }}>{groupCode ?? '—'}</Text>
+                )}
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={async () => {
+                if (!groupCode) return;
+                await Clipboard.setStringAsync(groupCode);
+                Alert.alert('Copied', 'Group code copied to clipboard');
+              }}
+              disabled={!groupCode}
+              style={{
+                marginTop: 12,
+                backgroundColor: groupCode ? COLORS.brandPrimary : '#cbd5e1',
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                borderRadius: 12,
+                alignItems: 'center',
+                alignSelf: 'stretch',
+              }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '800' }}>Copy code</Text>
+            </TouchableOpacity>
           </View>
 
         </ScrollView>

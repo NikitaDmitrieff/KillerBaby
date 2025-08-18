@@ -8,7 +8,7 @@ KillerBaby is a playful social elimination game. Each player is secretly assigne
 - Group panel: Once a group is selected, you see a group-specific tab bar. There are two panels:
   - Player panel: focused on your assignment, the group feed, and personal settings.
   - Admin panel: focused on assignments overview, players statuses, and group settings.
-- For now (frontend-only), a toggle in the header lets testers switch between Player/Admin panels manually.
+  
 
 ## Navigation
 

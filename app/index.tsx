@@ -52,6 +52,17 @@ export default function SelectGroupScreen() {
           if (!g) return;
           mergedMap.set(g.id, { id: g.id, name: g.name, description: g.description ?? null, created_at: g.created_at });
         });
+        // Also include groups the user admins (created)
+        const { data: adminOf, error: adminErr } = await supabase
+          .from('groups')
+          .select('id, name, description, created_at')
+          .eq('created_by', user.id)
+          .order('created_at', { ascending: false });
+        if (adminErr) throw adminErr;
+        (adminOf as any[] | null | undefined)?.forEach((g: any) => {
+          if (!g) return;
+          mergedMap.set(g.id, { id: g.id, name: g.name, description: g.description ?? null, created_at: g.created_at });
+        });
         if (!mounted) return;
         setGroups(Array.from(mergedMap.values()).sort((a, b) => b.created_at.localeCompare(a.created_at)));
       } catch (e: any) {

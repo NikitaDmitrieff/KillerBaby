@@ -47,7 +47,7 @@ export default function DareDetailsScreen() {
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templateSearch, setTemplateSearch] = useState('');
   const [templates, setTemplates] = useState<Array<{ id: number; text: string; difficulty?: 'EASY' | 'INTERMEDIATE' | 'HARD'; tags?: string[] }>>([]);
-  const [difficultyFilter, setDifficultyFilter] = useState<'ALL' | 'EASY' | 'INTERMEDIATE' | 'HARD'>('ALL');
+  const [selectedFilters, setSelectedFilters] = useState<Array<'EASY' | 'INTERMEDIATE' | 'HARD' | 'HUMAN'>>([]);
 
   useEffect(() => {
     if (!groupId || !assassinId) return;
@@ -190,13 +190,23 @@ export default function DareDetailsScreen() {
                 style={{ backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 10, marginTop: 10 }}
               />
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-                {(["ALL", "EASY", "INTERMEDIATE", "HARD"] as const).map((opt) => {
-                  const isSelected = difficultyFilter === opt;
-                  const label = opt === 'ALL' ? 'All' : opt === 'EASY' ? 'Easy' : opt === 'INTERMEDIATE' ? 'Intermediate' : 'Hard';
+                {(["ALL", "EASY", "INTERMEDIATE", "HARD", "HUMAN"] as const).map((opt) => {
+                  const label = opt === 'ALL' ? 'All' : opt === 'EASY' ? 'Easy' : opt === 'INTERMEDIATE' ? 'Intermediate' : opt === 'HARD' ? 'Hard' : 'Human';
+                  const isSelected = opt === 'ALL' ? selectedFilters.length === 0 : selectedFilters.includes(opt);
                   return (
                     <TouchableOpacity
                       key={opt}
-                      onPress={() => setDifficultyFilter(opt)}
+                      onPress={() => {
+                        if (opt === 'ALL') {
+                          setSelectedFilters([]);
+                          return;
+                        }
+                        setSelectedFilters((prev) =>
+                          prev.includes(opt)
+                            ? prev.filter((f) => f !== opt)
+                            : [...prev, opt]
+                        );
+                      }}
                       style={{ backgroundColor: isSelected ? COLORS.brandPrimary : '#f3f4f6', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9999 }}
                     >
                       <Text style={{ color: isSelected ? '#fff' : '#111827', fontWeight: '700' }}>{label}</Text>
@@ -218,7 +228,14 @@ export default function DareDetailsScreen() {
                         (t.tags || []).some((tag) => tag.toLowerCase().includes(q)) ||
                         (t.difficulty || 'EASY').toLowerCase().includes(q)
                       );
-                      const matchesDiff = difficultyFilter === 'ALL' || ((t.difficulty || 'EASY') === difficultyFilter);
+                      const matchesDiff =
+                        selectedFilters.length === 0
+                          ? true
+                          : selectedFilters.some((filter) =>
+                              filter === 'HUMAN'
+                                ? (t.tags || []).includes('Human')
+                                : (t.difficulty || 'EASY') === filter
+                            );
                       return matchesSearch && matchesDiff;
                     })
                     .slice(0, 60)

@@ -1,13 +1,12 @@
-import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../components/CollapsibleHeader';
+import CollapsibleHeader from '../../../components/CollapsibleHeader';
 import { View, Text, FlatList, TextInput, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from 'react-native';
-import RoleToggle from '../role-toggle';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useGroupsStore } from '../../../state/groups';
 import { useRouter } from 'expo-router';
 import { COLORS } from '../../../theme/colors';
 
-type PlayerItem = { id: string; display_name: string; is_active: boolean };
+type PlayerItem = { id: string; display_name: string; is_active: boolean; owner_user_id: string | null };
 
 function getInitials(name: string | undefined | null) {
   const safe = (name ?? '').trim();
@@ -124,13 +123,15 @@ export default function AdminPlayersScreen() {
   const [saving, setSaving] = useState(false);
   const [players, setPlayers] = useState<PlayerItem[]>([]);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<'All' | 'Active' | 'Removed'>('All');
+  const [filter, setFilter] = useState<'All' | 'Active' | 'Removed' | 'Unclaimed'>('All');
   const [gameStatus, setGameStatus] = useState<string | null>(null);
   const [userProfileId, setUserProfileId] = useState<string | null>(null);
   const [checkingIntegrity, setCheckingIntegrity] = useState(false);
   const [ringIsValid, setRingIsValid] = useState<boolean | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [openingChatPlayerId, setOpeningChatPlayerId] = useState<string | null>(null);
+  const [ringHasAssignments, setRingHasAssignments] = useState<boolean | null>(null);
+  const [hasAnyDare, setHasAnyDare] = useState<boolean | null>(null);
 
   const activeCount = useMemo(() => players.filter((p) => p.is_active).length, [players]);
   const filtered = useMemo(() => {
@@ -138,6 +139,7 @@ export default function AdminPlayersScreen() {
     let list = players;
     if (filter === 'Active') list = list.filter((p) => p.is_active);
     if (filter === 'Removed') list = list.filter((p) => !p.is_active);
+    if (filter === 'Unclaimed') list = list.filter((p) => !p.owner_user_id);
     if (!q) return list;
     return list.filter((p) => p.display_name.toLowerCase().includes(q));
   }, [players, query, filter]);
@@ -148,11 +150,11 @@ export default function AdminPlayersScreen() {
       setLoading(true);
       const { data, error } = await supabase
         .from('group_players')
-        .select('id, display_name, is_active')
+        .select('id, display_name, is_active, owner_user_id')
         .eq('group_id', groupId)
         .order('display_name', { ascending: true });
       if (error) throw error;
-      setPlayers((data ?? []).map((r: any) => ({ id: r.id as string, display_name: (r.display_name as string) || '—', is_active: !!r.is_active })));
+      setPlayers((data ?? []).map((r: any) => ({ id: r.id as string, display_name: (r.display_name as string) || '—', is_active: !!r.is_active, owner_user_id: r.owner_user_id ?? null })));
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Failed to load players');
     } finally {
@@ -162,6 +164,35 @@ export default function AdminPlayersScreen() {
 
   useEffect(() => {
     loadPlayers();
+  }, [groupId]);
+
+  useEffect(() => {
+    async function loadRingMeta() {
+      if (!groupId) return;
+      try {
+        const [{ count }, { data: dareOne }] = await Promise.all([
+          supabase
+            .from('assignments')
+            .select('id', { count: 'exact', head: true })
+            .eq('group_id', groupId)
+            .eq('is_active', true),
+          supabase
+            .from('assignments')
+            .select('id')
+            .eq('group_id', groupId)
+            .eq('is_active', true)
+            .not('dare_text', 'is', null)
+            .neq('dare_text', '')
+            .limit(1),
+        ]);
+        setRingHasAssignments((count ?? 0) > 0);
+        setHasAnyDare(((dareOne as any[]) ?? []).length > 0);
+      } catch {
+        setRingHasAssignments(null);
+        setHasAnyDare(null);
+      }
+    }
+    loadRingMeta();
   }, [groupId]);
 
   useEffect(() => {
@@ -324,11 +355,6 @@ export default function AdminPlayersScreen() {
       title={'Players'}
       subtitle={'Statuses and progression'}
       isRefreshing={refreshing}
-      renderRightAccessory={({ collapseProgress }) => (
-        <CollapsibleHeaderAccessory collapseProgress={collapseProgress}>
-          <RoleToggle />
-        </CollapsibleHeaderAccessory>
-      )}
       renderContent={({ contentInsetTop, onScroll, scrollRef }) => (
         <View style={{ flex: 1 }}>
           {loading ? (
@@ -371,7 +397,7 @@ export default function AdminPlayersScreen() {
                     </View>
 
                     <View style={{ marginTop: 10, flexDirection: 'row', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <Segmented value={filter} onChange={(v) => setFilter(v as any)} options={['All', 'Active', 'Removed']} />
+                      <Segmented value={filter} onChange={(v) => setFilter(v as any)} options={['All', 'Active', 'Removed', 'Unclaimed']} />
                       <TouchableOpacity
                         onPress={assertRing}
                         disabled={checkingIntegrity || !groupId}
@@ -432,6 +458,50 @@ export default function AdminPlayersScreen() {
                       </TouchableOpacity>
                     </View>
                   </View>
+
+                  {/* Ring/Dares empty-state callouts */}
+                  {ringHasAssignments === false && (
+                    <View
+                      style={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: 16,
+                        padding: 14,
+                        borderWidth: 1,
+                        borderColor: '#E5E7EB',
+                        ...headerShadow,
+                      }}
+                    >
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#111827' }}>No ring yet</Text>
+                      <Text style={{ marginTop: 6, color: '#6B7280' }}>Seed a ring to connect players in a single cycle.</Text>
+                      <TouchableOpacity
+                        onPress={() => router.push('/group/admin/assignments')}
+                        style={{ marginTop: 10, backgroundColor: COLORS.brandPrimary, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }}
+                      >
+                        <Text style={{ color: '#fff', fontWeight: '800' }}>Open assignments</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  {ringHasAssignments === true && hasAnyDare === false && (
+                    <View
+                      style={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: 16,
+                        padding: 14,
+                        borderWidth: 1,
+                        borderColor: '#E5E7EB',
+                        ...headerShadow,
+                      }}
+                    >
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#111827' }}>No dares yet</Text>
+                      <Text style={{ marginTop: 6, color: '#6B7280' }}>Add dare prompts for each assignment in the Dares tab.</Text>
+                      <TouchableOpacity
+                        onPress={() => router.push('/group/admin/assignments')}
+                        style={{ marginTop: 10, backgroundColor: COLORS.brandPrimary, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }}
+                      >
+                        <Text style={{ color: '#fff', fontWeight: '800' }}>Open assignments</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               }
               renderItem={({ item }) => (

@@ -1,7 +1,6 @@
-import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../../components/CollapsibleHeader';
+import CollapsibleHeader from '../../../../components/CollapsibleHeader';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Platform } from 'react-native';
 import SegmentedControl from '@react-native-segmented-control/segmented-control';
-import RoleToggle from '../../role-toggle';
 import { useEffect, useMemo, useState } from 'react';
 import { useGroupsStore } from '../../../../state/groups';
 import { supabase } from '../../../../lib/supabase';
@@ -218,6 +217,7 @@ export default function AdminAssignmentsScreen() {
   const [addedAssassinIds, setAddedAssassinIds] = useState<string[]>([]);
   const [tabIndex, setTabIndex] = useState(0);
   const currentTab: Tab = TABS[tabIndex];
+  const hasAnyDare = useMemo(() => edges.some((e) => (e.dare_text ?? '').trim().length > 0), [edges]);
 
   async function loadRing() {
     if (!groupId) return;
@@ -453,11 +453,6 @@ export default function AdminAssignmentsScreen() {
       title={"Assignments"}
       subtitle={"Who hunts whom, and dares"}
       isRefreshing={refreshing}
-      renderRightAccessory={({ collapseProgress }) => (
-        <CollapsibleHeaderAccessory collapseProgress={collapseProgress}>
-          <RoleToggle />
-        </CollapsibleHeaderAccessory>
-      )}
       renderContent={({ contentInsetTop, onScroll, scrollRef }) => (
         <View style={{ flex: 1 }}>
           {loading ? (
@@ -522,25 +517,57 @@ export default function AdminAssignmentsScreen() {
                       <TouchableOpacity
                         onPress={handleSeed}
                         disabled={seeding}
-                        style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
+                        style={{
+                          backgroundColor: seeding ? '#CBD5E1' : COLORS.brandPrimary,
+                          paddingHorizontal: 12,
+                          paddingVertical: 10,
+                          borderRadius: 10,
+                          shadowColor: '#000',
+                          shadowOpacity: 0.06,
+                          shadowRadius: 6,
+                          shadowOffset: { width: 0, height: 3 },
+                          elevation: 2,
+                        }}
                       >
-                        {seeding ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Seed ring</Text>}
+                        {seeding ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Generate ring & dares</Text>}
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={toggleRingEditMode}
-                        style={{ backgroundColor: ringEditMode ? COLORS.brandPrimary : '#e5e7eb', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
+                        style={{
+                          backgroundColor: ringEditMode ? '#f3f4f6' : '#ffffff',
+                          borderWidth: 1,
+                          borderColor: ringEditMode ? '#9ca3af' : '#e5e7eb',
+                          paddingHorizontal: 12,
+                          paddingVertical: 10,
+                          borderRadius: 10,
+                          shadowColor: '#000',
+                          shadowOpacity: 0.06,
+                          shadowRadius: 6,
+                          shadowOffset: { width: 0, height: 3 },
+                          elevation: 2,
+                        }}
                       >
-                        <Text style={{ color: ringEditMode ? '#fff' : '#111827', fontWeight: '700' }}>
-                          {ringEditMode ? 'Editing ring' : 'Edit ring'}
+                        <Text style={{ color: '#111827', fontWeight: '700' }}>
+                          {ringEditMode ? '✕' : 'Edit ring'}
                         </Text>
                       </TouchableOpacity>
                       {ringEditMode && (
                         <TouchableOpacity
                           onPress={saveRingChanges}
                           disabled={savingRing}
-                          style={{ backgroundColor: COLORS.brandPrimary, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 }}
+                          style={{
+                            backgroundColor: savingRing ? '#CBD5E1' : COLORS.brandPrimary,
+                            paddingHorizontal: 12,
+                            paddingVertical: 10,
+                            borderRadius: 10,
+                            shadowColor: '#000',
+                            shadowOpacity: 0.06,
+                            shadowRadius: 6,
+                            shadowOffset: { width: 0, height: 3 },
+                            elevation: 2,
+                          }}
                         >
-                          {savingRing ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Save ring</Text>}
+                          {savingRing ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>✓</Text>}
                         </TouchableOpacity>
                       )}
                       {ringEditMode && (
@@ -575,6 +602,28 @@ export default function AdminAssignmentsScreen() {
                           </View>
                         </View>
                       )}
+                    </View>
+                  )}
+
+                  {/* Dares tab callout when there are assignments but no dare texts yet */}
+                  {currentTab === 'Dares' && edges.length > 0 && !hasAnyDare && (
+                    <View
+                      style={{
+                        backgroundColor: '#FFFFFF',
+                        borderWidth: 1,
+                        borderColor: '#E5E7EB',
+                        borderRadius: 12,
+                        padding: 12,
+                        shadowColor: '#000',
+                        shadowOpacity: 0.04,
+                        shadowRadius: 8,
+                        shadowOffset: { width: 0, height: 4 },
+                      }}
+                    >
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#111827' }}>No dares yet</Text>
+                      <Text style={{ marginTop: 6, color: '#6B7280' }}>
+                        Add dare prompts for each assignment. Tap an assignment below to start.
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -621,6 +670,69 @@ export default function AdminAssignmentsScreen() {
                     </View>
                   )}
                 </TouchableOpacity>
+              )}
+              ListEmptyComponent={(
+                <View style={{ paddingVertical: 40, alignItems: 'center', gap: 8 }}>
+                  {currentTab === 'Ring' ? (
+                    <>
+                      <Text style={{ fontSize: 18, fontWeight: '800', color: '#111827' }}>No ring yet</Text>
+                      <Text style={{ color: '#6B7280', textAlign: 'center' }}>
+                        Generate a ring to connect players in a single cycle.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={handleSeed}
+                        disabled={seeding}
+                        style={{
+                          marginTop: 10,
+                          backgroundColor: seeding ? '#CBD5E1' : COLORS.brandPrimary,
+                          paddingHorizontal: 14,
+                          paddingVertical: 10,
+                          borderRadius: 12,
+                          shadowColor: '#000',
+                          shadowOpacity: 0.06,
+                          shadowRadius: 6,
+                          shadowOffset: { width: 0, height: 3 },
+                          elevation: 2,
+                        }}
+                      >
+                        {seeding ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Text style={{ color: '#fff', fontWeight: '800' }}>Generate ring & dares</Text>
+                        )}
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={{ fontSize: 18, fontWeight: '800', color: '#111827' }}>No dares yet</Text>
+                      <Text style={{ color: '#6B7280', textAlign: 'center' }}>
+                        Generate a ring to create assignments and start adding dares.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={handleSeed}
+                        disabled={seeding}
+                        style={{
+                          marginTop: 10,
+                          backgroundColor: seeding ? '#CBD5E1' : COLORS.brandPrimary,
+                          paddingHorizontal: 14,
+                          paddingVertical: 10,
+                          borderRadius: 12,
+                          shadowColor: '#000',
+                          shadowOpacity: 0.06,
+                          shadowRadius: 6,
+                          shadowOffset: { width: 0, height: 3 },
+                          elevation: 2,
+                        }}
+                      >
+                        {seeding ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Text style={{ color: '#fff', fontWeight: '800' }}>Generate ring & dares</Text>
+                        )}
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
               )}
               ListFooterComponent={(
                 <View style={{ gap: 8 }}>

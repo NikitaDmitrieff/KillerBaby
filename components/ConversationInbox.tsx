@@ -1,7 +1,6 @@
-import CollapsibleHeader, { CollapsibleHeaderAccessory } from './CollapsibleHeader';
+import CollapsibleHeader from './CollapsibleHeader';
 import { View, Text, ActivityIndicator, FlatList, RefreshControl, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import RoleToggle from '../app/group/role-toggle';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { useGroupsStore } from '../state/groups';
@@ -264,11 +263,6 @@ export default function ConversationInbox({ mode, title = 'Messages', subtitle =
       title={title}
       subtitle={subtitle}
       isRefreshing={refreshing}
-      renderRightAccessory={({ collapseProgress }) => (
-        <CollapsibleHeaderAccessory collapseProgress={collapseProgress}>
-          <RoleToggle />
-        </CollapsibleHeaderAccessory>
-      )}
       renderContent={({ contentInsetTop, onScroll, scrollRef }) => (
         <ScrollView
           ref={scrollRef as any}

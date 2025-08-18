@@ -12,28 +12,55 @@ function isLikelyUuid(input: string) {
   return uuidRegex.test(s);
 }
 
+function isLikelyShortCode(input: string) {
+  const s = input.trim();
+  return /^[a-zA-Z0-9]{4}$/.test(s);
+}
+
 export default function GroupJoinCodeScreen() {
   const { setSelectedGroup } = useGroupsStore();
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const canSubmit = isLikelyUuid(code) && !submitting;
+  const canSubmit = (isLikelyUuid(code) || isLikelyShortCode(code)) && !submitting;
 
   async function onSubmit() {
-    const groupId = code.trim();
-    if (!isLikelyUuid(groupId)) return;
+    const raw = code.trim();
+    if (!isLikelyUuid(raw) && !isLikelyShortCode(raw)) return;
     try {
       setSubmitting(true);
-      const { data: groupRow } = await supabase
-        .from('groups')
-        .select('id, name')
-        .eq('id', groupId)
-        .maybeSingle();
-      if (groupRow?.id) {
-        await setSelectedGroup(groupRow.id as string, groupRow.name as string);
-      } else {
-        await setSelectedGroup(groupId, groupId);
+      let resolved: { id: string; name: string | null } | null = null;
+
+      if (isLikelyShortCode(raw)) {
+        const shortCode = raw.toUpperCase();
+        const { data: byCode, error: codeErr } = await supabase
+          .from('groups')
+          .select('id, name')
+          .eq('short_code', shortCode)
+          .maybeSingle();
+        if (codeErr) throw codeErr;
+        if (byCode?.id) {
+          resolved = { id: byCode.id as string, name: (byCode.name as string) ?? null };
+        }
       }
+
+      if (!resolved && isLikelyUuid(raw)) {
+        const { data: byId, error: idErr } = await supabase
+          .from('groups')
+          .select('id, name')
+          .eq('id', raw)
+          .maybeSingle();
+        if (idErr) throw idErr;
+        if (byId?.id) {
+          resolved = { id: byId.id as string, name: (byId.name as string) ?? null };
+        }
+      }
+
+      if (!resolved) {
+        throw new Error('Group not found for this code');
+      }
+
+      await setSelectedGroup(resolved.id, resolved.name ?? resolved.id);
       router.replace('/group/join');
     } catch (e: any) {
       Alert.alert('Join failed', e?.message ?? 'Could not join this group. Check the code and try again.');
@@ -64,7 +91,7 @@ export default function GroupJoinCodeScreen() {
             <TextInput
               value={code}
               onChangeText={setCode}
-              placeholder="Group code (UUID)"
+              placeholder="Group code (e.g. 4C9X or UUID)"
               autoCapitalize="none"
               autoCorrect={false}
               inputMode="text"

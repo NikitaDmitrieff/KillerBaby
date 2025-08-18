@@ -1,8 +1,7 @@
-import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../../components/CollapsibleHeader';
+import CollapsibleHeader from '../../../../components/CollapsibleHeader';
 import { View, Text, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
-import RoleToggle from '../../role-toggle';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../../../lib/supabase';
 import { useGroupsStore } from '../../../../state/groups';
@@ -126,11 +125,6 @@ export default function PlayerConversationScreen() {
       title={conversation?.conversation_kind === 'PLAYER_ADMIN' ? 'Chat with Admin' : 'Chat with Target'}
       subtitle={"Conversation"}
       isRefreshing={refreshing}
-      renderRightAccessory={({ collapseProgress }) => (
-        <CollapsibleHeaderAccessory collapseProgress={collapseProgress}>
-          <RoleToggle />
-        </CollapsibleHeaderAccessory>
-      )}
       renderContent={({ contentInsetTop, onScroll, scrollRef }) => (
         <View style={{ flex: 1 }}>
           <TouchableOpacity

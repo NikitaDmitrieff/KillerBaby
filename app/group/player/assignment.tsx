@@ -1,6 +1,5 @@
-import CollapsibleHeader, { CollapsibleHeaderAccessory } from '../../../components/CollapsibleHeader';
+import CollapsibleHeader from '../../../components/CollapsibleHeader';
 import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, Alert, StyleSheet, RefreshControl } from 'react-native';
-import RoleToggle from '../role-toggle';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useGroupsStore } from '../../../state/groups';
@@ -151,11 +150,6 @@ export default function PlayerAssignmentScreen() {
       title="Mission Briefing"
       subtitle={gameStatus === 'ended' ? 'Game finished' : 'Your target & dare'}
       isRefreshing={refreshing}
-      renderRightAccessory={({ collapseProgress }) => (
-        <CollapsibleHeaderAccessory collapseProgress={collapseProgress}>
-          <RoleToggle />
-        </CollapsibleHeaderAccessory>
-      )}
       renderContent={({ contentInsetTop, onScroll, scrollRef }) => (
         <View style={{ flex: 1 }}>
           {loading ? (

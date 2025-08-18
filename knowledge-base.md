@@ -60,6 +60,9 @@
 - Only admins/moderators can set `resolved_at`.
 
 ## Change log
+- 2025-08-18: Added `groups.short_code` (TEXT, 4 chars A–Z2–9), unique with generator and trigger. Backfilled existing groups and set NOT NULL. Frontend: join accepts 4-char codes or UUID; player settings shows copyable invite code.
+- 2025-08-18: Added RPC `delete_group_cascade(p_group_id, p_admin_profile_id)` to transactionally delete a group and all dependent rows. Authorization: only `groups.created_by` may delete.
+- 2025-08-18: Added `dare_tag` value `Human` and backfilled 21 new dare templates across all existing groups tagged `Human` with curated difficulties (idempotent on `lower(text)` per group).
 - 2025-08-17: Added `messages` table, enums `message_kind`, `message_tag`, indexes, and trigger for admin routing.
 - 2025-08-17: Seeded default `dare_templates` for all existing groups and added an insert trigger so new groups auto-populate ~44 default dares. Idempotent seeding avoids duplicates by matching on lowercase `text` per `group_id`.
 - 2025-08-17: Implemented elimination flow: `eliminate_player(p_group_id, p_assassin_player_id, p_created_by_profile_id)` closes the assassin's and victim's active edges (`reason_closed='kill'`, `closed_at=now()`), inserts a new edge that rewires to the victim's target and carries forward the dare, and sets `replaced_by_assignment_id` on the two closed rows.
@@ -80,7 +83,7 @@
 ### Enums (dare)
 
 - `dare_difficulty`: `EASY`, `INTERMEDIATE`, `HARD`
-- `dare_tag`: `Wordplay`, `Trigger`, `Social`, `Misdirection`, `Physical`, `Silly`, `Prop`, `Skill`, `Acting`, `Constraint`, `Music`, `Phone`, `Consent`, `Timing`, `Puzzle`, `Observation`, `Improv`, `Cheeky`, `Drawing`, `Brain`, `PopCulture`, `Stealth`, `Sensory`, `Prank-lite`
+- `dare_tag`: `Wordplay`, `Trigger`, `Social`, `Misdirection`, `Physical`, `Silly`, `Prop`, `Skill`, `Acting`, `Constraint`, `Music`, `Phone`, `Consent`, `Timing`, `Puzzle`, `Observation`, `Improv`, `Cheeky`, `Drawing`, `Brain`, `PopCulture`, `Stealth`, `Sensory`, `Prank-lite`, `Human`
 
 ### Table: `dare_templates`
 
