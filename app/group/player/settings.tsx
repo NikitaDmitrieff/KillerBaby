@@ -5,17 +5,20 @@ import { useGroupsStore } from '../../../state/groups';
 import { supabase } from '../../../lib/supabase';
 import { COLORS } from '../../../theme/colors';
 import * as Clipboard from 'expo-clipboard';
+import { useRouter } from 'expo-router';
 
 export default function PlayerSettingsScreen() {
   const [notifications, setNotifications] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const { playerId, id: groupId } = useGroupsStore();
+  const { playerId, id: groupId, leaveCurrentGroup } = useGroupsStore();
   const [displayName, setDisplayName] = useState('');
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [savingName, setSavingName] = useState(false);
   const [groupCode, setGroupCode] = useState<string | null>(null);
   const [loadingGroup, setLoadingGroup] = useState(false);
+  const [quitting, setQuitting] = useState(false);
+  const router = useRouter();
 
   async function loadProfile() {
     if (!playerId) return;
@@ -184,6 +187,88 @@ export default function PlayerSettingsScreen() {
               }}
             >
               <Text style={{ color: '#fff', fontWeight: '800' }}>Copy code</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ backgroundColor: '#fff1f2', borderRadius: 12, padding: 16, marginTop: 24, borderWidth: 1, borderColor: '#fecdd3' }}>
+            <Text style={{ fontWeight: '800', marginBottom: 8, color: '#7f1d1d' }}>Danger zone</Text>
+            <Text style={{ color: '#7f1d1d' }}>Quitting removes you from this group. If a game is active, your removal may affect the ring and might require admin permissions.</Text>
+            <TouchableOpacity
+              onPress={() => {
+                if (quitting) return;
+                Alert.alert(
+                  'Quit group?',
+                  'You will lose access to this group on this device. If a game is active, we will attempt to remove you from the ring.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Quit',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          setQuitting(true);
+                          if (!groupId) {
+                            await leaveCurrentGroup();
+                            router.replace('/');
+                            return;
+                          }
+                          // Determine current game status
+                          const { data: g } = await supabase
+                            .from('groups')
+                            .select('game_status')
+                            .eq('id', groupId as string)
+                            .maybeSingle();
+                          const status = (g?.game_status as string | null) ?? null;
+                          if (status === 'active' && playerId) {
+                            const { data: userRes } = await supabase.auth.getUser();
+                            const profileId = userRes?.user?.id as string | undefined;
+                            try {
+                              if (!profileId) throw new Error('Missing session');
+                              const { error: rpcErr } = await supabase.rpc('remove_member_from_ring', {
+                                p_group_id: groupId as string,
+                                p_removed_player_id: playerId as string,
+                                p_moderator_profile_id: profileId,
+                              });
+                              if (rpcErr) throw rpcErr;
+                            } catch (e: any) {
+                              Alert.alert('Quit failed', e?.message ?? 'Ask the group admin to remove you during an active game.');
+                              return;
+                            }
+                          } else if (playerId) {
+                            // Mark inactive if game not active
+                            await supabase
+                              .from('group_players')
+                              .update({ is_active: false, removed_at: new Date().toISOString() })
+                              .eq('id', playerId as string);
+                          }
+                          await leaveCurrentGroup();
+                          router.replace('/');
+                        } catch (e: any) {
+                          Alert.alert('Quit failed', e?.message ?? 'Could not quit group');
+                        } finally {
+                          setQuitting(false);
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+              disabled={quitting}
+              style={{
+                marginTop: 12,
+                backgroundColor: quitting ? '#fca5a5' : '#ef4444',
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                borderRadius: 12,
+                alignItems: 'center',
+                alignSelf: 'stretch',
+              }}
+            >
+              {quitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={{ color: '#fff', fontWeight: '800' }}>Quit group</Text>
+              )}
             </TouchableOpacity>
           </View>
 

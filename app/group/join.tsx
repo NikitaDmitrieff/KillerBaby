@@ -89,6 +89,10 @@ export default function JoinGroupAsPlayerScreen() {
   // Claim a specific placeholder by id by delegating to the join RPC using the placeholder's display name
   async function handleClaimById(playerId: string) {
     if (!groupId) return;
+    if (isAdminOfGroup) {
+      Alert.alert('Unavailable', 'As the group creator, you must continue as Admin.');
+      return;
+    }
     const ph = placeholders.find((p) => p.id === playerId);
     if (!ph) return;
     await handleJoinWithName(ph.display_name);
@@ -96,6 +100,10 @@ export default function JoinGroupAsPlayerScreen() {
 
   async function handleJoinWithName(displayName: string) {
     if (!groupId) return;
+    if (isAdminOfGroup) {
+      Alert.alert('Unavailable', 'As the group creator, you must continue as Admin.');
+      return;
+    }
     try {
       setSubmitting(true);
       // If the typed name case-insensitively matches a placeholder, use the exact stored casing to claim it
@@ -156,7 +164,11 @@ export default function JoinGroupAsPlayerScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
       <View style={{ padding: 16, gap: 10 }}>
         <Text style={{ fontSize: 24, fontWeight: '800' }}>Who are you in {groupLabel ?? groupName ?? ''}?</Text>
-        <Text style={{ color: '#6b7280' }}>Pick your name from the list or enter a new one.</Text>
+        <Text style={{ color: '#6b7280' }}>
+          {isAdminOfGroup
+            ? 'As the group creator, you must continue as Admin. Player selection is disabled.'
+            : 'Pick your name from the list or enter a new one.'}
+        </Text>
 
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
           <TextInput
@@ -164,12 +176,13 @@ export default function JoinGroupAsPlayerScreen() {
             onChangeText={setQuery}
             placeholder="Search names or type a new one"
             autoCapitalize="words"
-            style={{ flex: 1, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}
+            editable={!isAdminOfGroup && !submitting}
+            style={{ flex: 1, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, opacity: isAdminOfGroup ? 0.6 : 1 }}
           />
           <TouchableOpacity
-            disabled={!query.trim() || submitting}
+            disabled={isAdminOfGroup || !query.trim() || submitting}
             onPress={() => handleJoinWithName(query.trim())}
-            style={{ backgroundColor: query.trim() && !submitting ? COLORS.brandPrimary : '#cbd5e1', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 }}
+            style={{ backgroundColor: query.trim() && !submitting && !isAdminOfGroup ? COLORS.brandPrimary : '#cbd5e1', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 }}
           >
             <Text style={{ color: '#fff', fontWeight: '700' }}>Use this</Text>
           </TouchableOpacity>
@@ -207,9 +220,9 @@ export default function JoinGroupAsPlayerScreen() {
           ListEmptyComponent={<Text style={{ color: '#6b7280' }}>No names yet. Enter yours above.</Text>}
           renderItem={({ item }) => (
             <TouchableOpacity
-              disabled={submitting}
+              disabled={submitting || isAdminOfGroup}
               onPress={() => handleClaimById(item.id)}
-              style={{ backgroundColor: '#f9f9fb', borderRadius: 16, padding: 16, marginBottom: 12 }}
+              style={{ backgroundColor: '#f9f9fb', borderRadius: 16, padding: 16, marginBottom: 12, opacity: isAdminOfGroup ? 0.6 : 1 }}
             >
               <Text style={{ fontWeight: '800', fontSize: 16 }}>{item.display_name}</Text>
             </TouchableOpacity>

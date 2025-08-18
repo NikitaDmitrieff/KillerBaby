@@ -12,6 +12,7 @@ type GroupsState = {
   setPlayerForGroup: (groupId: string, playerId: string) => Promise<void>;
   setSelectedPlayer: (playerId: string) => Promise<void>;
   setRoleMode: (role: 'player' | 'admin') => Promise<void>;
+  leaveCurrentGroup: () => Promise<void>;
 };
 
 const STORAGE_KEY = 'kb.playerMap';
@@ -77,6 +78,23 @@ export const useGroupsStore = create<GroupsState>((set, get) => ({
       await AsyncStorage.setItem(ROLE_STORAGE_KEY, role);
     } catch {}
     set({ roleMode: role });
+  },
+  leaveCurrentGroup: async () => {
+    const current = get();
+    const groupId = current.id;
+    if (!groupId) {
+      set({ id: null, name: null, playerId: null });
+      return;
+    }
+    try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+      if (groupId in map) {
+        delete map[groupId];
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+      }
+    } catch {}
+    set({ id: null, name: null, playerId: null });
   },
 }));
 

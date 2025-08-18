@@ -460,27 +460,6 @@ export default function AdminPlayersScreen() {
                   </View>
 
                   {/* Ring/Dares empty-state callouts */}
-                  {ringHasAssignments === false && (
-                    <View
-                      style={{
-                        backgroundColor: '#FFFFFF',
-                        borderRadius: 16,
-                        padding: 14,
-                        borderWidth: 1,
-                        borderColor: '#E5E7EB',
-                        ...headerShadow,
-                      }}
-                    >
-                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#111827' }}>No ring yet</Text>
-                      <Text style={{ marginTop: 6, color: '#6B7280' }}>Seed a ring to connect players in a single cycle.</Text>
-                      <TouchableOpacity
-                        onPress={() => router.push('/group/admin/assignments')}
-                        style={{ marginTop: 10, backgroundColor: COLORS.brandPrimary, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }}
-                      >
-                        <Text style={{ color: '#fff', fontWeight: '800' }}>Open assignments</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
                   {ringHasAssignments === true && hasAnyDare === false && (
                     <View
                       style={{
