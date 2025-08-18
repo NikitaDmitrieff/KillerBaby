@@ -20,7 +20,12 @@ export default function JoinGroupAsPlayerScreen() {
   // If player already selected for this group, skip this screen
   useEffect(() => {
     if (playerId) {
-      router.replace('/group');
+      (async () => {
+        try {
+          await setRoleMode('player');
+        } catch {}
+        router.replace('/group');
+      })();
     }
   }, [playerId, router]);
 
@@ -90,7 +95,7 @@ export default function JoinGroupAsPlayerScreen() {
   async function handleClaimById(playerId: string) {
     if (!groupId) return;
     if (isAdminOfGroup) {
-      Alert.alert('Unavailable', 'As the group creator, you must continue as Admin.');
+      Alert.alert('Not allowed', 'As the group creator, you must continue as Admin and cannot join as a player.');
       return;
     }
     const ph = placeholders.find((p) => p.id === playerId);
@@ -101,7 +106,7 @@ export default function JoinGroupAsPlayerScreen() {
   async function handleJoinWithName(displayName: string) {
     if (!groupId) return;
     if (isAdminOfGroup) {
-      Alert.alert('Unavailable', 'As the group creator, you must continue as Admin.');
+      Alert.alert('Not allowed', 'As the group creator, you must continue as Admin and cannot join as a player.');
       return;
     }
     try {
@@ -124,6 +129,7 @@ export default function JoinGroupAsPlayerScreen() {
       );
       if (!pid) throw new Error('Join RPC returned no player_id');
       await setSelectedPlayer(pid);
+      await setRoleMode('player');
       // After joining, update the locally stored group name if we only had a UUID label
       try {
         const looksUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(groupLabel ?? '');
@@ -166,27 +172,29 @@ export default function JoinGroupAsPlayerScreen() {
         <Text style={{ fontSize: 24, fontWeight: '800' }}>Who are you in {groupLabel ?? groupName ?? ''}?</Text>
         <Text style={{ color: '#6b7280' }}>
           {isAdminOfGroup
-            ? 'As the group creator, you must continue as Admin. Player selection is disabled.'
+            ? 'You are the group creator. Continue as Admin. Admins cannot join as players.'
             : 'Pick your name from the list or enter a new one.'}
         </Text>
 
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search names or type a new one"
-            autoCapitalize="words"
-            editable={!isAdminOfGroup && !submitting}
-            style={{ flex: 1, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, opacity: isAdminOfGroup ? 0.6 : 1 }}
-          />
-          <TouchableOpacity
-            disabled={isAdminOfGroup || !query.trim() || submitting}
-            onPress={() => handleJoinWithName(query.trim())}
-            style={{ backgroundColor: query.trim() && !submitting && !isAdminOfGroup ? COLORS.brandPrimary : '#cbd5e1', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 }}
-          >
-            <Text style={{ color: '#fff', fontWeight: '700' }}>Use this</Text>
-          </TouchableOpacity>
-        </View>
+        {!isAdminOfGroup && (
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search names or type a new one"
+              autoCapitalize="words"
+              editable={!submitting}
+              style={{ flex: 1, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}
+            />
+            <TouchableOpacity
+              disabled={!query.trim() || submitting}
+              onPress={() => handleJoinWithName(query.trim())}
+              style={{ backgroundColor: query.trim() && !submitting ? COLORS.brandPrimary : '#cbd5e1', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Use this</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {isAdminOfGroup && (
           <View style={{ marginTop: 8 }}>
             <TouchableOpacity
@@ -212,7 +220,7 @@ export default function JoinGroupAsPlayerScreen() {
         <View style={{ padding: 16 }}>
           <ActivityIndicator />
         </View>
-      ) : (
+      ) : !isAdminOfGroup ? (
         <FlatList
           data={filtered}
           keyExtractor={(item) => item.id}
@@ -220,14 +228,18 @@ export default function JoinGroupAsPlayerScreen() {
           ListEmptyComponent={<Text style={{ color: '#6b7280' }}>No names yet. Enter yours above.</Text>}
           renderItem={({ item }) => (
             <TouchableOpacity
-              disabled={submitting || isAdminOfGroup}
+              disabled={submitting}
               onPress={() => handleClaimById(item.id)}
-              style={{ backgroundColor: '#f9f9fb', borderRadius: 16, padding: 16, marginBottom: 12, opacity: isAdminOfGroup ? 0.6 : 1 }}
+              style={{ backgroundColor: '#f9f9fb', borderRadius: 16, padding: 16, marginBottom: 12 }}
             >
               <Text style={{ fontWeight: '800', fontSize: 16 }}>{item.display_name}</Text>
             </TouchableOpacity>
           )}
         />
+      ) : (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 40 }}>
+          <Text style={{ color: '#6b7280' }}>As the group creator, you cannot join as a player.</Text>
+        </View>
       )}
     </SafeAreaView>
   );

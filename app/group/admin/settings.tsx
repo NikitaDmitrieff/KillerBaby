@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { useGroupsStore } from '../../../state/groups';
 import { supabase } from '../../../lib/supabase';
 import { COLORS } from '../../../theme/colors';
-import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
  
 
 export default function AdminSettingsScreen() {
@@ -108,7 +108,9 @@ export default function AdminSettingsScreen() {
             <TouchableOpacity
               onPress={async () => {
                 if (!groupCode) return;
-                await Clipboard.setStringAsync(groupCode);
+                try {
+                  await Clipboard.setStringAsync(groupCode);
+                } catch {}
                 // Silent copy in admin page
               }}
               disabled={!groupCode}
@@ -154,7 +156,8 @@ export default function AdminSettingsScreen() {
                           Alert.alert('Group deleted', 'The group has been removed.');
                           router.replace('/');
                         } catch (e: any) {
-                          Alert.alert('Delete failed', e?.message ?? 'Could not delete group');
+                          const msg = e?.message ?? 'Could not delete group';
+                          setTimeout(() => Alert.alert('Delete failed', msg), 300);
                         } finally {
                           setDeleting(false);
                         }

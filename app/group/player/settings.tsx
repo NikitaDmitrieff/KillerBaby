@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { useGroupsStore } from '../../../state/groups';
 import { supabase } from '../../../lib/supabase';
 import { COLORS } from '../../../theme/colors';
-import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 
 export default function PlayerSettingsScreen() {
   const [notifications, setNotifications] = useState(true);
@@ -172,8 +172,12 @@ export default function PlayerSettingsScreen() {
             <TouchableOpacity
               onPress={async () => {
                 if (!groupCode) return;
-                await Clipboard.setStringAsync(groupCode);
-                Alert.alert('Copied', 'Group code copied to clipboard');
+                try {
+                  await Clipboard.setStringAsync(groupCode);
+                  Alert.alert('Copied', 'Group code copied to clipboard');
+                } catch (e) {
+                  Alert.alert('Copy failed', 'Could not access clipboard');
+                }
               }}
               disabled={!groupCode}
               style={{
@@ -231,7 +235,8 @@ export default function PlayerSettingsScreen() {
                               });
                               if (rpcErr) throw rpcErr;
                             } catch (e: any) {
-                              Alert.alert('Quit failed', e?.message ?? 'Ask the group admin to remove you during an active game.');
+                              const msg = e?.message ?? 'Ask the group admin to remove you during an active game.';
+                              setTimeout(() => Alert.alert('Quit failed', msg), 300);
                               return;
                             }
                           } else if (playerId) {
@@ -244,7 +249,8 @@ export default function PlayerSettingsScreen() {
                           await leaveCurrentGroup();
                           router.replace('/');
                         } catch (e: any) {
-                          Alert.alert('Quit failed', e?.message ?? 'Could not quit group');
+                          const msg = e?.message ?? 'Could not quit group';
+                          setTimeout(() => Alert.alert('Quit failed', msg), 300);
                         } finally {
                           setQuitting(false);
                         }

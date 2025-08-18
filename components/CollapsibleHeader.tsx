@@ -5,7 +5,13 @@ import { GRADIENTS } from '../theme/colors';
 
 let LinearGradient: any;
 try {
-  LinearGradient = require('expo-linear-gradient').LinearGradient;
+  const maybeModule = require('expo-linear-gradient');
+  const Exported = (maybeModule && (maybeModule.LinearGradient || (maybeModule as any).default)) || null;
+  LinearGradient = Exported
+    ? Exported
+    : ({ colors, style, children }: any) => (
+        <View style={[style, { backgroundColor: colors?.[0] ?? '#9d0208' }]}>{children}</View>
+      );
 } catch (error) {
   LinearGradient = ({ colors, style, children }: any) => (
     <View style={[style, { backgroundColor: colors?.[0] ?? '#9d0208' }]}>{children}</View>
